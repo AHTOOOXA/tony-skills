@@ -1,0 +1,306 @@
+{
+  "skill_name": "pishi",
+  "notes": "6 tasks on fictional data (rental platform «Domly»). Each has a prompt, input file, expected output, judgment assertions, and a `checks` block that grade.py verifies mechanically via scripts/check.py. Keep your real tasks in a private folder with the same layout.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "ops-lock-codes",
+      "prompt": "Прочитай inputs/01-ops-lock-codes.md и напиши сообщение для операционки (мессенджер, не разработчики): куда правильно класть код от электронного замка и что поправить по каждому объекту. Сохрани в 01_ops_ru.txt.",
+      "files": [
+        "inputs/01-ops-lock-codes.md"
+      ],
+      "expected_output": "Russian message ≤ 320 words. First line = the field rule («Код доступа», not «Код от подъезда»). Urgent block first: U-161 and U-160 with codes 551234 / 774421 and that they can be given to guests now. Then where the right field is, using UI labels in «ёлочки». Then per-object list with ids and admin links, the two unknown codes as questions. Then numeric-only / no-# constraint. No Latin field names, no эндпоинт/бэкенд.",
+      "assertions": [
+        "First sentence states the field rule; no greeting, no preamble",
+        "U-161 and U-160 come first with their codes and dates, and the note that codes can be sent to guests right now",
+        "All 5 object ids appear with admin links; U-195 and U-106 are phrased as questions to ops",
+        "UI labels in «ёлочки»; no Latin field names; no эндпоинт/бэкенд/рендер",
+        "Mentions the numeric-only field and that # is added automatically",
+        "No numbers absent from the input"
+      ],
+      "checks": {
+        "output": "01_ops_ru.txt",
+        "max_words": 320,
+        "min_score": 80,
+        "source": "inputs/01-ops-lock-codes.md",
+        "no_greeting": true,
+        "required": [
+          "Код доступа",
+          "Код от подъезда",
+          "Способ заселения",
+          "U-161",
+          "U-160",
+          "U-195",
+          "U-106",
+          "U-243",
+          "551234",
+          "774421",
+          "units/161",
+          "units/160",
+          "units/195",
+          "units/106",
+          "units/243"
+        ],
+        "forbidden": [
+          "access_code",
+          "entrance_code",
+          "access_method",
+          "эндпоинт",
+          "бэкенд",
+          "рендер",
+          "Здравствуйте",
+          "Уважаемые"
+        ],
+        "first_line_any": [
+          "Код доступа"
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "name": "status-cto-mailings",
+      "prompt": "По материалам inputs/02-status-cto.md напиши одно сообщение для CTO в мессенджер про авторассылки: что сделали, что попробовали, где упёрлись, какое решение и что нужно от него. Только наши цифры, по отчёту, не по плану. Сохрани в 02_cto_mailings_ru.txt.",
+      "files": [
+        "inputs/02-status-cto.md"
+      ],
+      "expected_output": "≤ 200 words, Russian, sections сделали / попробовали / упёрлись / решение / нужно от вас, answering the CTO's three questions in order. Contains 4 210, 610, 14.07, 64 / 1 бронь, one signing domain as the cause, DMARC ruled out, 5 400 ₽/мес, 640 of 6 100. Does NOT contain the plan's 25 % target or the 0,5–1,5 % industry norm. Ends on the asks.",
+      "assertions": [
+        "Answers the three questions in order: what/how many → money → blockers + needs",
+        "States the uncomfortable facts plainly: disabled by me, revenue not proven",
+        "Ends with the asks (budget, DNS, consent decision) — nothing after",
+        "No greeting, no «небольшой апдейт», no closing formula"
+      ],
+      "checks": {
+        "output": "02_cto_mailings_ru.txt",
+        "max_words": 200,
+        "min_score": 80,
+        "source": "inputs/02-status-cto.md",
+        "no_greeting": true,
+        "required": [
+          "4 210",
+          "610",
+          "14.07",
+          "64",
+          "5 400",
+          "640",
+          "6 100"
+        ],
+        "forbidden": [
+          "25 %",
+          "25%",
+          "0,5",
+          "0.5",
+          "норма",
+          "обычно",
+          "по опыту",
+          "небольшой апдейт",
+          "надеюсь",
+          "обращайтесь",
+          "Привет",
+          "Здравствуй"
+        ],
+        "last_block_any": [
+          "Нужно от",
+          "нужно от",
+          "от тебя"
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "name": "explain-sentry-filter",
+      "prompt": "Прочитай inputs/03-explain-sentry-filter.md. Объясни по-русски, в чём проблема и что ты предлагаешь — так, чтобы я мог пересказать это CTO на созвоне через час. Ответ прямо в чат; копию сохрани в 03_explain_ru.md.",
+      "files": [
+        "inputs/03-explain-sentry-filter.md"
+      ],
+      "expected_output": "3–5 paragraphs of Russian prose, no headers. Opens with the concrete case (blank panel, 180 events / 150 guests). Explains that Sentry shows zero since 5 May because beforeSend drops 4xx ApiError, so «no events» proved nothing. Explains stale slugs from date edits (52 guests). Three proposals. Ends with what the CTO decides. No invented effort estimates.",
+      "assertions": [
+        "Entirely in Russian; identifiers allowed, no English sentences",
+        "First paragraph gives the concrete user-facing case with a number before any mechanism",
+        "States that the original assumption is false and why (beforeSend since 5 May, commit a7f31c0)",
+        "Mentions slug regeneration on date edit and the 52 guests",
+        "Exactly three proposals; no invented estimates or a fourth idea",
+        "No headers, ≤ 5 paragraphs"
+      ],
+      "checks": {
+        "output": "03_explain_ru.md",
+        "max_words": 320,
+        "min_score": 80,
+        "required": [
+          "180",
+          "150",
+          "52",
+          "beforeSend"
+        ],
+        "required_any": [
+          [
+            "5 мая",
+            "05.05",
+            "5.05",
+            "a7f31c0"
+          ]
+        ],
+        "forbidden": [
+          "давайте разбер",
+          "стоит отметить",
+          "\n## ",
+          "\n# ",
+          "**",
+          "день)",
+          "дня)",
+          "(день",
+          "(дня"
+        ],
+        "max_paragraphs": 5
+      }
+    },
+    {
+      "id": 4,
+      "name": "family-video-call",
+      "prompt": "По фактам из inputs/04-family-video-call.md напиши сообщение родителям в мессенджер, как подключиться к видеозвонку. Сохрани в 04_family_ru.txt.",
+      "files": [
+        "inputs/04-family-video-call.md"
+      ],
+      "expected_output": "Warm, short Russian message ≤ 170 words. Numbered steps, one action each, button names in «ёлочки». Says what they'll see (wait, I'll let you in). VPN fallback, headphones tip, nothing recorded, no registration. No WebRTC / лобби / модератор / профиль.",
+      "assertions": [
+        "≤ 170 words; a one-line greeting is fine here",
+        "Numbered steps, one action each, buttons in «ёлочки»",
+        "Contains: no registration, allow camera/mic, wait to be let in, VPN fallback, headphones, nothing recorded",
+        "Phone path mentions the server address or «Продолжить в браузере»",
+        "No technical terms"
+      ],
+      "checks": {
+        "output": "04_family_ru.txt",
+        "max_words": 170,
+        "min_score": 85,
+        "required": [
+          "Разрешить",
+          "VPN",
+          "наушник"
+        ],
+        "forbidden": [
+          "WebRTC",
+          "nginx",
+          "модератор",
+          "лобби",
+          "lobby",
+          "профиль",
+          "Поднять руку"
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "name": "edit-bloated-draft",
+      "prompt": "Сократи текст из inputs/05-bloated-draft.md вдвое, все факты и цифры сохрани. Это сообщение для CTO. Сохрани в 05_short_ru.txt.",
+      "files": [
+        "inputs/05-bloated-draft.md"
+      ],
+      "expected_output": "≤ 200 words (source ≈ 400). Every number preserved: 4 210, 980, 1 900, 410, 920, TASK-655, 610, 6 дней, 7 июля, 14 июля, 64, 1 бронь, 4 недоставленных, domly.example, TASK-702, 31.08, 2 100, 3 300, 5 400, TASK-640. All AI-tells removed. Argument order kept. Nothing added.",
+      "assertions": [
+        "≤ 50 % of the source length",
+        "All facts and numbers preserved",
+        "Zero AI-tells (HARD category)",
+        "Keeps the order: sent → tried → deliverability → cause → decision; ends on the decision, not a closing formula",
+        "Nothing added that is not in the source"
+      ],
+      "checks": {
+        "output": "05_short_ru.txt",
+        "max_words": 200,
+        "min_score": 85,
+        "source": "inputs/05-bloated-draft.md",
+        "required": [
+          "4 210",
+          "980",
+          "1 900",
+          "410",
+          "920",
+          "TASK-655",
+          "610",
+          "64",
+          "5 400",
+          "2 100",
+          "3 300",
+          "TASK-640",
+          "TASK-702",
+          "31.08",
+          "domly.example"
+        ],
+        "required_any": [
+          [
+            "14 июля",
+            "14.07"
+          ],
+          [
+            "7 июля",
+            "07.07",
+            "7.07"
+          ],
+          [
+            "6 дней",
+            "шесть дней"
+          ]
+        ],
+        "forbidden": [
+          "в современном мире",
+          "важно отметить",
+          "стоит отметить",
+          "давайте разбер",
+          "подводя итог",
+          "надеюсь",
+          "обращайтесь",
+          "не просто",
+          "в рамках",
+          "является",
+          "данный",
+          "данного",
+          "данной",
+          "осуществля",
+          "было принято решение"
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "name": "pr-body-ru",
+      "prompt": "Напиши PR body на русском для ветки из inputs/06-pr-image-cache.md (PR в dev). Сохрани в 06_pr_body_ru.md.",
+      "files": [
+        "inputs/06-pr-image-cache.md"
+      ],
+      "expected_output": "Russian PR body ≤ 300 words with Что / Зачем / Как / Как проверить / Риски. Names the migration, the backfill command with dry-run default and the ~35-min prod window, the STORAGE_PUBLIC_HOST requirement (PR #883), the measured LCP 5,8 → 1,7 and bytes-per-frame numbers, and what is NOT in the PR (#885). Does not paraphrase the diff file by file.",
+      "assertions": [
+        "Has the five sections in order; ≤ 300 words",
+        "Names migration, backfill command, prod window, env var, out-of-scope #885",
+        "Contains the measured numbers",
+        "Russian prose; identifiers in backticks fine; no English sentences",
+        "No pass-by-file diff retelling"
+      ],
+      "checks": {
+        "output": "06_pr_body_ru.md",
+        "max_words": 300,
+        "min_score": 80,
+        "source": "inputs/06-pr-image-cache.md",
+        "required": [
+          "alembic",
+          "backfill_media_variants",
+          "--apply",
+          "35",
+          "STORAGE_PUBLIC_HOST",
+          "#883",
+          "#885",
+          "5,8",
+          "1,7",
+          "1,6",
+          "190",
+          "24 %",
+          "12 400"
+        ],
+        "forbidden": [
+          "данный",
+          "является",
+          "в рамках"
+        ]
+      }
+    }
+  ]
+}

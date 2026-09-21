@@ -21,6 +21,10 @@ source → first line is the point → structure = the reader's question → eig
 stop-word groups → verbs and one thought per sentence → AI-tells → one linter
 pass → deliver.
 
+**One file at runtime.** Everything the model needs is in `SKILL.md` (≈ 210
+lines); nothing else is read except your own `house-rules.md`. The linter is
+executed, not read.
+
 **Linter** — `pishi/scripts/check.py`, stdlib only:
 
 ```bash
@@ -36,7 +40,7 @@ material — the «цифры непонятно откуда» detector. Exit c
 
 **House rules** — the skill reads `~/.claude/pishi/house-rules.md` before every
 task if it exists. That file is where *your* repeated corrections live (quote →
-rule), plus your team's formats. Template: `pishi/references/house-rules.example.md`.
+rule), plus your team's formats. Template: `pishi/house-rules.example.md`.
 Keep it out of public repos.
 
 **Benchmark** — `pishi/evals/`: six tasks on fictional data with mechanical
@@ -52,7 +56,7 @@ git clone https://github.com/AHTOOOXA/tony-skills ~/tony-skills
 ln -s ~/tony-skills/pishi ~/.claude/skills/pishi          # user scope: every project
 # or project scope:
 ln -s ~/tony-skills/pishi <repo>/.claude/skills/pishi
-mkdir -p ~/.claude/pishi && cp ~/tony-skills/pishi/references/house-rules.example.md ~/.claude/pishi/house-rules.md
+mkdir -p ~/.claude/pishi && cp ~/tony-skills/pishi/house-rules.example.md ~/.claude/pishi/house-rules.md
 ```
 
 Restart Claude Code. The skill triggers on Russian writing requests («напиши»,

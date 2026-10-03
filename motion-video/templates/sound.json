@@ -1,0 +1,23 @@
+{
+ "duration": 6.0,
+ "out": "audio.wav",
+ "master": {"lufs": -14, "tp": -2.0},
+ "room": {"size": 0.28, "damping": 0.6, "level": 0.2},
+ "assets": {
+  "card": {"src": "kenney:casino/Audio/card-place-2.ogg", "license": "CC0 (Kenney)", "hp": 140, "lp": 9000},
+  "body": {"src": "kenney:impact/Audio/impactSoft_medium_001.ogg", "license": "CC0 (Kenney)", "lp": 2500},
+  "tap": {"src": "kenney:ui/Audio/click3.ogg", "license": "CC0 (Kenney)", "hp": 300, "lp": 8000},
+  "air": {"src": "mixkit-sfx:1489", "license": "Mixkit Free License"},
+  "paper": {"src": "mixkit-sfx:1530", "license": "Mixkit Free License", "lp": 10000},
+  "bell": {"src": "mixkit-sfx:3109", "license": "Mixkit Free License"},
+  "rain": {"src": "mixkit-sfx:2474", "license": "Mixkit Free License", "lp": 5000, "hp": 90}
+ },
+ "bed": {"asset": "rain", "kind": "ambience", "lufs": -27, "offset": 4.0, "fade_in": 0.6, "fade_out": 1.5},
+ "silences": [[3.3, 3.62]],
+ "events": [
+  {"sound": "air", "t": 1.6, "lift": 2, "gain": -16, "send": 0.3},
+  {"layers": [{"sound": "card"}, {"sound": "body", "gain": -10}], "t": 1.95, "lift": 9, "gain": -9, "pan": 0.2, "send": 0.25},
+  {"sound": "paper", "t": 3.8, "lift": 7, "gain": -12, "send": 0.2},
+  {"layers": [{"sound": "bell"}, {"sound": "body", "gain": -8}], "t": 3.95, "align": "onset", "lift": 13, "gain": -4, "send": 0.5, "duck": false}
+ ]
+}

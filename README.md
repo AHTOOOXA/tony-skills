@@ -1,11 +1,12 @@
 # tony-skills
 
 Skills for [Claude Code](https://claude.com/claude-code) (and any agent that
-reads `SKILL.md`). One skill so far.
+reads `SKILL.md`).
 
 | Skill | What it does |
 |---|---|
 | [`pishi/`](pishi/) | Russian prose for a human reader — messages to a CTO, ops instructions, tickets, PR bodies, explanations, cover letters, how-tos for parents. Infostyle method + Russian AI-tell removal + your own house rules, with a zero-dependency linter that scores a draft 0–100. |
+| [`motion-video/`](motion-video/) | Motion-design videos as code — app showcases, launch films, rebrand reveals, vertical ads. HTML composition with `__seek(t)`, rendered frame by frame (Playwright + ffmpeg) with linear-light motion blur and correct BT.709 encoding; real-UI capture on a slowed page clock; a sound mixer from recorded SFX verified by measurement; contact sheets, automated checks and a critic loop. |
 
 ## pishi — «Пиши, сокращай» для агента
 
@@ -72,3 +73,24 @@ Russian AI-tell list draws on public work such as
 survey.
 
 MIT.
+
+## motion-video — motion design as code
+
+The agent is the motion designer; the skill is its studio. The film is a program — `templates/compose.html`
+exposes `__meta` and `__seek(t)` — and `scripts/render.mjs` renders every frame and encodes a clean MP4
+(PNG frames, BT.709, linear-light motion blur on fast moves, never across a cut, parallel workers).
+Around it: `capture.mjs` records a real app on a slowed page clock, `beats.py` finds a track's beats and drop
+so the film can be cut to music, `mix.py` builds the soundtrack from a spec (recorded SFX placed on peaks,
+levelled by perceived loudness, one room), and `qa/` gives contact sheets and mechanical checks.
+`references/inspiration.md` collects the films that landed and the prompts behind them; the rest of
+`references/` is a library of moves with good default numbers — not rules.
+
+```bash
+node motion-video/scripts/render.mjs comp.html --stills 0,1.6,3.3 -o stills/
+node motion-video/scripts/render.mjs comp.html -o out.mp4
+uv run --with librosa python motion-video/scripts/beats.py track.mp3 --len 15
+```
+
+Personal taste rules (short!) go in `~/.claude/motion-video/house-rules.md` — see `house-rules.example.md`.
+Built from claude-motion-design, onetake (ideas only — it is non-commercial), brag, HyperFrames,
+ClaudeAnimationBase and a lot of rejected renders; sources in `motion-video/references/tools.md`.

@@ -1,0 +1,128 @@
+<!doctype html>
+<!-- motion-video · drawn.js demo: a boiling ink figure that draws itself on, 3 s at 24 fps.
+     Contract with scripts/render.mjs (same as compose.html):
+       window.__meta  = { duration, fps, width, height, blur: [[t0,t1]…], cuts: [t…] }
+       window.__seek(t) paints the frame for time t — a PURE function of t: no timers, no CSS
+                        transitions, no Math.random (seeded only), no state carried between frames.
+       window.__ready   resolves when fonts and images are decoded.
+     Style card: references/styles.md → "Frame-by-frame / cel + line boil".
+     Drawings on 2s, fast pop on 1s, end hold on 3s; the camera stays on 1s (raw t). No blur windows:
+     held drawings must not get sub-frame blur. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1080px; overflow: hidden; background: #f4e9d0; }
+  canvas { position: absolute; inset: 0; width: 1080px; height: 1080px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="drawn.js"></script>
+<script>
+const { expose, spline, resample, boil, inkStroke, fillShape, drawOn, paced, rng, noise2 } = Drawn;
+const W = 1080, H = 1080, FPS = 24, DPR = window.devicePixelRatio || 1;
+const PAL = { ink: '#1c1613', red: '#e5402b', yel: '#ffc425', paper: '#f4e9d0' };   // 05-cel-boil palette
+const cv = document.getElementById('c'); cv.width = W * DPR; cv.height = H * DPR;
+const ctx = cv.getContext('2d');
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, t0, d) => clamp((t - t0) / d);
+const io = k => k < .5 ? 4 * k ** 3 : 1 - (-2 * k + 2) ** 3 / 2;              // ≈ cubic-bezier(.65,0,.35,1)
+
+// Exposure sheet: on 2s while drawing, on 1s for the colour pop + sparkles, on 3s for the end hold.
+const SCHED = [[0, 1.95, 2], [2.2, 2.5, 1], [2.5, 3.0, 3]];
+
+// ---- the drawing: named strokes (the name is the seed), control points in px
+const P = (pts, closed = false) => resample(spline(pts, closed, 4), 3);
+const S = {
+  ground: P([[150, 866], [400, 858], [700, 866], [930, 858]]),
+  body:   P([[540, 330], [642, 372], [684, 505], [672, 665], [612, 800], [540, 830], [458, 802], [406, 662], [398, 500], [440, 372]], true),
+  legL:   P([[492, 812], [486, 856], [450, 862]]),
+  legR:   P([[588, 812], [598, 854], [634, 858]]),
+  armL:   P([[408, 600], [368, 664], [352, 730]]),
+  eyeL:   P([[500, 448], [514, 470], [500, 494], [486, 470]], true),
+  eyeR:   P([[586, 444], [600, 466], [586, 490], [572, 466]], true),
+  smile:  P([[492, 548], [540, 578], [594, 542]]),
+};
+const PACE = Object.fromEntries(Object.entries(S).map(([k, v]) => [k, paced(v)]));
+// [name, start, duration, width] — the pen draws them in this order
+// One pen: strokes never overlap in time, so there is only ever one tip on screen.
+const ORDER = [['ground', -0.35, 0.75, 5], ['body', 0.4, 0.75, 6.5], ['legL', 1.15, 0.15, 5.5], ['legR', 1.3, 0.15, 5.5],
+  ['armL', 1.45, 0.17, 5.5], ['armR', 1.62, 0.23, 5.5], ['eyeL', 1.85, 0.08, 4], ['eyeR', 1.93, 0.08, 4], ['smile', 2.01, 0.14, 4.5]];
+const T = { colour: 2.2, cheeks: 2.28, spark: 2.3, wave: 1.85 };
+
+// Right arm: rigged at the shoulder, waves on the drawing clock (twos), so it's rebuilt per drawing.
+function armR(td) {
+  const a = td > T.wave ? 0.3 * Math.sin(2 * Math.PI * 1.4 * (td - T.wave)) * clamp((td - T.wave) / 0.3) : 0;
+  const c = Math.cos(a), s = Math.sin(a), sh = [668, 600];
+  const rot = ([x, y]) => [sh[0] + x * c - y * s, sh[1] + x * s + y * c];
+  return P([[0, 0], [52, -58], [74, -140], [70, -168]].map(rot));
+}
+function star(cx, cy, r, rot) {       // 4-point twinkle as a closed polygon
+  const pts = []; for (let i = 0; i < 8; i++) { const a = rot + i * Math.PI / 4, q = i % 2 ? r * 0.32 : r; pts.push([cx + q * Math.cos(a), cy + q * Math.sin(a)]); }
+  return resample([...pts, pts[0]], 3);
+}
+
+// ---- paper: a seeded tooth texture, multiplied over everything and offset per drawing (every cel is a new sheet)
+let TOOTH;
+function makeTooth() {
+  const c = document.createElement('canvas'); c.width = W + 128; c.height = H + 128;
+  const x = c.getContext('2d'), img = x.createImageData(c.width, c.height), r = rng('paper/tooth');
+  for (let i = 0, p = 0; i < img.data.length; i += 4, p++) {
+    const px = p % c.width, py = (p / c.width) | 0;
+    const v = 240 + 5 * noise2(px / 120, py / 120, 'paper/blot') + 12 * (r() - 0.5) + 6 * noise2(px / 3, py / 9, 'paper/fibre');
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = Math.min(255, v); img.data[i + 3] = 255;
+  }
+  x.putImageData(img, 0, 0); return c;
+}
+
+window.__meta = { duration: 3.0, fps: FPS, width: W, height: H, blur: [], cuts: [] };
+window.__ready = (async () => { TOOTH = makeTooth(); await document.fonts.ready; })();
+
+window.__seek = t => {
+  const D = expose(t, SCHED, FPS), td = D.t, id = D.id, nd = D.step === 3 ? 3 : 4;   // 3 drawings on the hold
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = PAL.paper; ctx.fillRect(0, 0, W, H);
+  // camera on 1s: raw t, slow push 1 → 1.05 into the figure
+  const z = 1 + 0.05 * io(prog(t, 0.2, 2.6));
+  ctx.translate(540, 600); ctx.scale(z, z); ctx.translate(-540, -600);
+
+  // colour first, under the ink: off-register (−5, +4) px, boiled on its own seed; pops on 1s
+  if (td >= T.colour) fillShape(ctx, S.body, PAL.yel, { seed: 'fig/body', id, drawings: nd, amp: 2.0 });
+  if (td >= T.cheeks) for (const [cx, n] of [[462, 'L'], [624, 'R']])
+    fillShape(ctx, resample(spline([[cx - 22, 520], [cx, 508], [cx + 22, 520], [cx, 532]], true, 3), 3), PAL.red, { seed: 'fig/cheek' + n, id, drawings: nd, amp: 1.2 });
+
+  // ink: each stroke draws on with the pen (corner-weighted pacing), then boils with the drawing id
+  let head = null;
+  for (const [name, t0, dur, w] of ORDER) {
+    const u = prog(td, t0, dur); if (u <= 0) continue;
+    const pts = name === 'armR' ? armR(td) : S[name];
+    const k = name === 'armR' ? io(u) : PACE[name](io(u));
+    const h = drawOn(ctx, boil(pts, { seed: 'fig/' + name, id, drawings: nd }), k,
+      { color: PAL.ink, ink: { w0: w, w1: w * 0.8, seed: 'fig/' + name, taper: [10, 22] }, tip: { color: '229,64,43', r: 12, core: 2.5, a: 0.8 } });
+    if (u < 1) head = h;
+  }
+  // eyes are solid ink blobs once drawn
+  for (const e of ['eyeL', 'eyeR']) if (prog(td, ORDER.find(o => o[0] === e)[1], 0.08) >= 1)
+    fillShape(ctx, S[e], PAL.ink, { seed: 'fig/' + e, id, drawings: nd, amp: 1, dx: 0, dy: 0 });
+
+  // cel FX: two twinkles pop 0 → 1.35 → 1 on 1s (frame-stepped, no easing between drawings), then boil
+  const pop = [0, 0.55, 1.35, 1.1, 1];
+  [[790, 360, 46, 'a'], [840, 470, 26, 'b']].forEach(([x, y, r, n], i) => {
+    const f = Math.round((td - T.spark - i * 2 / FPS) * FPS); if (f < 0) return;
+    const s = pop[Math.min(f, pop.length - 1)], st = star(x, y, r * s, 0.12 * i);
+    fillShape(ctx, st, i ? PAL.red : PAL.yel, { seed: 'fx/star' + n, id, drawings: nd, amp: 1.2, dx: -3, dy: 2 });
+    inkStroke(ctx, boil(st, { seed: 'fx/star' + n, id, drawings: nd, amp: 1.2 }), { w0: 3.5, taper: 0, seed: 'fx/star' + n });
+  });
+
+  // paper tooth, multiply, offset per drawing (the sheet changes with every drawing, like scanned cels)
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const r = rng(id * 7919 + 1), ox = (r() * 128) | 0, oy = (r() * 128) | 0;
+  ctx.globalCompositeOperation = 'multiply'; ctx.globalAlpha = 0.6;
+  ctx.drawImage(TOOTH, ox, oy, W, H, 0, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+};
+</script>
+</body>
+</html>

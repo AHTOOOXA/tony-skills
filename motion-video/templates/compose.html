@@ -118,6 +118,24 @@ function frameAt(take, ms) {
   return `${take.dir}/${fr[lo].file}`;
 }
 
+/* Timing from files: a cue sheet (cues.json, {"name": seconds}) shared with scripts/mix.py ("t": "cue:name"),
+   and word times from scripts/vo.py (words.json) when a voice drives the film. fetch works under file://. */
+const loadJSON = async p => { const r = await fetch(p); if (!r.ok) throw new Error(`${p}: ${r.status}`); return r.json(); };
+const norm = w => w.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+/** t0 of the nth occurrence of `text` in words.json ([{w, t0, t1}, …]) — key beats to words, not seconds. */
+function word(words, text, nth = 1) {
+  const hits = words.filter(x => norm(x.w) === norm(text));
+  if (!hits[nth - 1]) throw new Error(`word "${text}" #${nth} not in words.json`);
+  return hits[nth - 1].t0;
+}
+/** Wait for every <img> by onload, not decode(): many concurrent decode() calls reject in Chrome, and a
+ *  swallowed failure would let a missing image ship as a blank. A broken image fails __ready loudly. */
+const imagesLoaded = () => Promise.all([...document.images].map(img => new Promise((ok, no) => {
+  const fail = () => no(new Error(`image failed: ${img.src}`));
+  if (img.complete) return img.naturalWidth ? ok() : fail(); // already settled: error events won't fire again
+  img.addEventListener('load', ok, { once: true }); img.addEventListener('error', fail, { once: true });
+})));
+
 // Grain against banding is added at encode (render.mjs --grain), not here: noise in every PNG is slow and costs bitrate.
 
 /* ============================== the demo film (replace) ============================== */
@@ -128,6 +146,8 @@ function frameAt(take, ms) {
 //  3.6  card slides out / end card slides in   | slide           |        | velocity      | paper
 //  4.0  end card holds to the last frame        | —               | all    | —             | chime
 const T = { hookOut: 1.4, iris: 1.6, push: 2.3, swap: 3.8, end: 6.0 };
+// With a cue sheet: Object.assign(T, await loadJSON('cues.json')) at the top of __ready, then set window.__meta there
+// (render.mjs reads __meta after __ready) — picture and sound read the same times.
 window.__meta = {
   duration: T.end, fps: 30, width: W, height: H,
   blur: [[T.iris, T.iris + 0.36], [T.swap - 0.2, T.swap + 0.3]], // only fast moves get sub-frame blur
@@ -142,7 +162,7 @@ window.__ready = (async () => {
   Object.assign($('#card').style, { left: W / 2 - 330 + 'px', top: H / 2 - 420 + 'px', width: '660px', height: '840px',
     borderRadius: '36px', background: 'linear-gradient(160deg,#4b3f8f,#231d45)', boxShadow: '0 40px 80px -30px #000' });
   await document.fonts.ready;
-  await Promise.all([...document.images].map(i => i.decode().catch(() => {})));
+  await imagesLoaded();
 })();
 
 window.__seek = t => {

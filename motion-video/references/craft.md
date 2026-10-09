@@ -117,3 +117,19 @@ a logo at the end, uniform shot lengths, corner labels and frame borders, partic
 emoji, rainbow gradients, an "Innovative AI assistant" headline, a moral in the last frame. Fix with a
 named reference ("Apple keynote product film", a URL): extract frames every 0.5 s, write `style_guide.md`
 (palette, type, shot lengths, transitions, camera, how text enters/exits) — take the grammar, never the content.
+
+## 7. Gotchas that cost a render
+
+Each of these shipped a broken frame for someone (twoclipping, CMD, onetake, our own runs):
+- **z-index on every layer.** Without it a card floats over the flood that should cover it.
+- **Declare everything before the first `__seek`.** A `let` read by `__seek` before it's set throws only in a
+  worker that seeks frame 0 first.
+- **No `will-change: transform` on anything the camera scales.** Chrome rasterises it once; zoomed-in text goes soft.
+- **Hidden parent, visible child:** a child with `visibility: visible` shows through a hidden parent; use `inherit`.
+- **Measure text after the camera scale is known** (`measureText` or `getBoundingClientRect` ÷ zoom), not before.
+- **Images:** wait on `onload` (the template's `imagesLoaded()`), not dozens of concurrent `decode()` calls; a
+  failed image must fail `__ready`, never ship as a blank.
+- **A preview that cuts away and comes back is two cuts.** List both in `__meta.cuts`.
+- **CSS animations are fine, transitions are not:** `render.mjs` seeks every CSS/Web Animation to t, but a
+  transition depends on a state change, so it is disabled.
+

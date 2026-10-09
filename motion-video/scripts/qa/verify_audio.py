@@ -1,6 +1,6 @@
 """motion-video · qa/verify_audio.py — check a mix by measurement (the agent can't listen).
 
-    uv run --with librosa --with pyloudnorm --with soundfile python verify_audio.py sound.json [--hero T]
+    uv run --with librosa --with pyloudnorm --with soundfile --with scipy --with pedalboard python verify_audio.py sound.json [--hero T]
 
 Reads the spec (events, bed, silences) and the WAV it produced. Checks:
   loudness      integrated ≤ target + 1 and ≥ target − 6 LU (sparse mixes run low), true peak ≤ ceiling
@@ -27,7 +27,10 @@ from scipy.signal import butter, resample_poly, sosfilt
 warnings.filterwarnings("ignore")
 
 spec_path = Path(sys.argv[1]).resolve()
-spec = json.loads(spec_path.read_text())
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from mix import resolve_refs  # "cue:…" / "word:…" times → seconds, same as the mixer
+
+spec = resolve_refs(json.loads(spec_path.read_text()), spec_path.parent)
 y, sr = sf.read(str(spec_path.parent / spec.get("out", "audio.wav")), always_2d=True)
 y = y.T
 M = {"lufs": -14.0, "tp": -1.5, **spec.get("master", {})}
@@ -63,17 +66,18 @@ elif I < M["lufs"] - 1.5:
 if tp > M["tp"] + 0.3:
     fails.append("true peak")
 
-ev = sorted(spec["events"], key=lambda e: e["t"])
-heroes = [e for e in ev if e.get("lift", 0) >= 10] or ev
-hero_t = float(sys.argv[sys.argv.index("--hero") + 1]) if "--hero" in sys.argv else heroes[-1]["t"]
-mom = {e["t"]: momentary(kx, e["t"] + 0.1) for e in ev}
-hero = momentary(kx, hero_t + 0.1)
-name = lambda e: e.get("sound") or e["layers"][0]["sound"]
-rival = max((e for e in ev if abs(e["t"] - hero_t) > 0.3), key=lambda e: mom[e["t"]])
-others = mom[rival["t"]]
-print(f"hero       @{hero_t:.2f}: {hero - others:+.1f} LU over the loudest other moment, {name(rival)}@{rival['t']:.2f} (need ≥ +2)")
-if hero - others < 2:
-    fails.append("hero")
+ev = sorted(spec.get("events", []), key=lambda e: e["t"])
+if len(ev) >= 2:
+    heroes = [e for e in ev if e.get("lift", 0) >= 10] or ev
+    hero_t = float(sys.argv[sys.argv.index("--hero") + 1]) if "--hero" in sys.argv else heroes[-1]["t"]
+    mom = {e["t"]: momentary(kx, e["t"] + 0.1) for e in ev}
+    hero = momentary(kx, hero_t + 0.1)
+    name = lambda e: e.get("sound") or e["layers"][0]["sound"]
+    rival = max((e for e in ev if abs(e["t"] - hero_t) > 0.3), key=lambda e: mom[e["t"]])
+    others = mom[rival["t"]]
+    print(f"hero       @{hero_t:.2f}: {hero - others:+.1f} LU over the loudest other moment, {name(rival)}@{rival['t']:.2f} (need ≥ +2)")
+    if hero - others < 2:
+        fails.append("hero")
 
 sos = butter(4, [300, 8000], btype="band", fs=sr, output="sos")
 ph = np.stack([sosfilt(sos, ch) for ch in y])
@@ -102,8 +106,8 @@ if close:
 hop = int(0.1 * sr)
 w = np.array([10 * np.log10(np.mean(np.square(kx[:, i:i + hop])) + 1e-12) for i in range(0, y.shape[1] - hop, hop)])
 quiet = float(np.mean(w < w.max() - 20))
-print(f"quiet      {quiet:.0%} of 100 ms windows ≥ 20 LU under the peak (need ≥ 15 %)")
-if quiet < 0.15:
+print(f"quiet      {quiet:.0%} of 100 ms windows ≥ 20 LU under the peak (need ≥ 15 %)" + (" — narrated: informational" if spec.get("voice") else ""))
+if quiet < 0.15 and not spec.get("voice"):  # a voice fills the mix by design
     fails.append("quiet")
 
 mono = y.mean(axis=0, keepdims=True)

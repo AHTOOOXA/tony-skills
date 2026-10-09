@@ -15,6 +15,14 @@ sound.json (see templates/sound.json):
   bed      {asset, kind:"ambience"|"music", lufs (absolute, after the master), offset?, lp?, hp?, fade_in?, fade_out?,
             lift_at?, key_times?}   music: picks the offset where the track lifts at lift_at and key_times hit beats
   silences [[t0, t1], …]   the bed drops out here (score the silence: before the hero hit, at a held breath)
+  voice    {src, lufs:-16, offset:0, hp:70, duck:{depth:-11, attack:0.06, release:0.35} | false}  (or a list of them)
+            narration on the timeline (src: a path or an asset name; offset: where the file's 0 lands). The bed
+            ducks under the voice envelope; SFX don't. With a voice, the VOICE sets the loudness: it lands at
+            `lufs`, the bed at bed.lufs, events at lift over the bed — the master glues and limits but doesn't
+            push the SFX toward master.lufs. `duration` may be omitted: voice end + 0.5 s. Make the file with vo.py.
+  cues     "cues.json" (default: the sibling file, if any) → {"name": seconds}. ANY time in the spec may then be
+            "cue:name", "cue:name+0.05", "cue:name-0.1"; "word:select", "word:pick a card#2" = t0 of the (2nd)
+            match in words.json ("words": path, default sibling; + the voice offset). Unknown names fail loudly.
 
 Prints a report: per-event achieved lift, integrated loudness, true peak. Then run qa/verify_audio.py.
 Why the rules: references/sound.md.
@@ -22,7 +30,9 @@ Why the rules: references/sound.md.
 import io
 import json
 import os
+import re
 import subprocess
+import unicodedata
 import sys
 import urllib.request
 import zipfile
@@ -167,12 +177,103 @@ def master(mix: np.ndarray, lufs: float, tp: float, max_gr: float = 8.0) -> tupl
     return out, total
 
 
+REF = re.compile(r"^(cue|word):(.+?)\s*([+-]\s*\d+(?:\.\d+)?)?$")
+norm = lambda w: "".join(c for c in unicodedata.normalize("NFKC", w).lower().replace("ё", "е") if c.isalnum())
+
+
+def resolve_refs(spec: dict, base: Path) -> dict:
+    """Replace every "cue:…" / "word:…" string in the spec by seconds (cues.json / words.json). Loud on misses."""
+    files = {}
+
+    def load(kind):
+        if kind not in files:
+            key, default = ("cues", "cues.json") if kind == "cue" else ("words", "words.json")
+            p = base / spec.get(key, default)
+            if not p.exists():
+                sys.exit(f"mix: {kind}: references need {p} (set \"{key}\" in the spec)")
+            files[kind] = json.loads(p.read_text())
+        return files[kind]
+
+    def word_t0(name, voff):
+        name, nth = (name.rsplit("#", 1)[0], int(name.rsplit("#", 1)[1])) if re.search(r"#\d+$", name) else (name, 1)
+        want, ws = [norm(w) for w in name.split() if norm(w)], load("word")
+        have = [norm(w["w"]) for w in ws]
+        hits = [i for i in range(len(have)) if have[i:i + len(want)] == want]
+        if len(hits) < nth:
+            sys.exit(f"mix: word:{name}" + (f"#{nth}" if nth > 1 else "") + f" — {len(hits)} match(es) in words.json")
+        return ws[hits[nth - 1]]["t0"] + voff
+
+    def ref(s, voff, depth=0):
+        m = REF.match(s.strip())
+        kind, rest = s.split(":", 1)
+        if kind == "cue":
+            cues = load("cue")
+            name, off = (rest, 0.0) if rest in cues else (m.group(2), float((m.group(3) or "0").replace(" ", "")))
+            if name not in cues:
+                sys.exit(f"mix: unknown cue \"{name}\" — cues.json has: {', '.join(cues) or 'nothing'}")
+            v = cues[name]
+            v = ref(v, voff, depth + 1) if isinstance(v, str) and depth < 4 else v  # a cue may point at a word
+            return float(v) + off
+        return word_t0(m.group(2), voff) + float((m.group(3) or "0").replace(" ", ""))
+
+    def walk(o, voff):
+        if isinstance(o, dict):
+            return {k: (o[k] if k in ("assets", "cues", "words", "out") else walk(o[k], voff)) for k in o}
+        if isinstance(o, list):
+            return [walk(v, voff) for v in o]
+        if isinstance(o, str) and REF.match(o.strip()):
+            return ref(o, voff)
+        return o
+
+    if "voice" in spec:  # the voice's own offset first: word: refs are in the voice file's time
+        spec["voice"] = walk(spec["voice"], 0.0)
+    V = spec.get("voice")
+    voff = float(V.get("offset", 0)) if isinstance(V, dict) else float(V[0].get("offset", 0)) if V else 0.0
+    return walk(spec, voff)
+
+
+def voice_duck(v: np.ndarray, depth: float, attack: float, release: float) -> np.ndarray:
+    """Gain (linear, per sample) for the bed under a voice: `depth` dB wherever the voice is active. Look-ahead:
+    the bed starts down `attack` s before the first syllable and is there when it lands; held through gaps
+    < 0.15 s (no pumping between words); back up over `release` s."""
+    h = int(0.01 * SR)
+    n = len(v) // h
+    e = 10 * np.log10(np.mean(np.square(v[: n * h].reshape(n, h)), axis=1) + 1e-12)
+    on = e > (np.percentile(e[e > -80], 95) - 30 if (e > -80).any() else 0)
+    tgt = np.where(on, depth, 0.0)
+    la, hold = max(1, int(attack / 0.01)), 15
+    t2 = tgt.copy()
+    for k in range(1, max(la, hold) + 1):
+        if k <= la:
+            t2[:-k] = np.minimum(t2[:-k], tgt[k:])  # down before the voice starts
+        if k <= hold:
+            t2[k:] = np.minimum(t2[k:], tgt[:-k])   # don't pump between words
+    ac, rc = np.exp(-0.01 / (attack / 3)), np.exp(-0.01 / (release / 3))  # ~95 % of the way in attack / release
+    g, cur = np.empty(n), 0.0
+    for i, x in enumerate(t2):
+        cur = x + (cur - x) * (ac if x < cur else rc)
+        g[i] = cur
+    return db(np.interp(np.arange(len(v)), np.arange(n) * h + h / 2, g)).astype(np.float32)
+
+
 def main():
     spec_path = Path(sys.argv[1]).resolve()
     base = spec_path.parent
     spec = json.loads(spec_path.read_text())
+    spec = resolve_refs(spec, base)
+    assets = {k: load_asset(a, base) for k, a in spec.get("assets", {}).items()}
+
+    # ---------- voice (loaded first: it can set the duration) ----------
+    V = spec.get("voice")
+    voices = [V] if isinstance(V, dict) else (V or [])
+    vparts = []
+    for v in voices:
+        y = assets[v["src"]] if v["src"] in assets else load_asset({"src": v["src"], "hp": v.get("hp", 70), "lp": v.get("lp")}, base)
+        vparts.append((v, y))
+    if "duration" not in spec and vparts:
+        spec["duration"] = max(v.get("offset", 0) + len(y) / SR for v, y in vparts) + 0.5
+        print(f"duration {spec['duration']:.2f}s (voice end + 0.5 s)")
     N = int(spec["duration"] * SR)
-    assets = {k: load_asset(a, base) for k, a in spec["assets"].items()}
     M = {"lufs": -14.0, "tp": -1.5, **spec.get("master", {})}
     R = {"size": 0.3, "damping": 0.55, "level": 0.22, **spec.get("room", {})}
 
@@ -208,7 +309,7 @@ def main():
     dry, send = np.zeros((2, N), np.float32), np.zeros((2, N), np.float32)
     duck = np.ones(N, np.float32)
     report = []
-    for e in spec["events"]:
+    for e in spec.get("events", []):
         layers = e.get("layers") or [{"sound": e["sound"]}]
         main = assets[layers[0]["sound"]]
         y = np.zeros(int(max(len(assets[l["sound"]]) / SR + l.get("offset", 0) for l in layers) * SR) + 1, np.float32)
@@ -261,32 +362,67 @@ def main():
     room = Pedalboard([Reverb(room_size=R["size"], damping=R["damping"], wet_level=1.0, dry_level=0.0, width=0.9)])
     sfx = dry + R["level"] * room(send, SR)
 
+    # ---------- voice on the timeline; the bed ducks under it ----------
+    vt = np.zeros(N, np.float32)
+    for v, y in vparts:  # each part levelled to its own lufs, then placed; the bed ducks under all of them
+        y = y * db(v.get("lufs", -16.0) - meter.integrated_loudness(np.stack([y, y]).T))
+        i0 = int(v.get("offset", 0) * SR)
+        y = y[max(0, -i0): max(0, N - i0)]
+        vt[max(0, i0): max(0, i0) + len(y)] += y
+        dk = {"depth": -11.0, "attack": 0.06, "release": 0.35, **(v["duck"] if isinstance(v.get("duck"), dict) else {})} if v.get("duck", True) is not False else None
+        if B and dk:
+            part = np.zeros(N, np.float32)
+            part[max(0, i0): max(0, i0) + len(y)] = y
+            duck *= voice_duck(part, dk["depth"], dk["attack"], dk["release"])
+
     # ---------- master; the bed is held at its absolute level ----------
     # A bed is continuous and hits are short, so the bed dominates integrated loudness: normalising the
     # whole mix to -14 would drag the bed up to ~-18. So the bed keeps its absolute target (bed.lufs) and
     # the master's gain lands on the SFX: `lift` sets the BALANCE between events; every event ends up
     # `lift + Δ` over the bed, Δ reported below.
     delta = 0.0
-    if B:
+    if vparts:
+        # The voice sets the loudness. Bed and SFX are pinned where the spec puts them (bed.lufs, lift over the
+        # bed), and the master only glues and limits: aiming the whole mix at master.lufs would push the SFX up
+        # (the voice and bed are fixed, so only the events could move).
+        if B:
+            k = db(B["lufs"] - meter.integrated_loudness(np.stack([bed, bed]).T))
+            bed *= k
+            sfx = sfx * k
+        pre = sfx + np.stack([bed * duck, bed * duck]) + np.stack([vt, vt])
+        out, G = master(pre, meter.integrated_loudness(pre.T), M["tp"])
+        G = meter.integrated_loudness(out.T) - meter.integrated_loudness(pre.T)
+    elif B:
         for _ in range(3):
             st = np.stack([bed * duck, bed * duck])
             _, G = master(sfx + st, M["lufs"], M["tp"])
             step = B["lufs"] - (meter.integrated_loudness(np.stack([bed, bed]).T) + G)
             bed *= db(step)
             delta -= step
-    st = np.stack([bed * duck, bed * duck]) if B else 0
-    out, G = master(sfx + st, M["lufs"], M["tp"])
+    if not vparts:
+        st = np.stack([bed * duck, bed * duck]) if B else 0
+        out, G = master(sfx + st, M["lufs"], M["tp"])
     path = base / spec.get("out", "audio.wav")
     sf.write(str(path), out.T, SR, subtype="PCM_24")
 
     tp = tpeak(out)
     I = meter.integrated_loudness(out.T)
-    if I < M["lufs"] - 1:
+    if I < M["lufs"] - 1 and not vparts:
         print(f"  note: {I:.1f} LUFS < target — the limiter was capped at 8 dB to keep the hits; louder needs denser sound")
     print(f"→ {path.name}: {meter.integrated_loudness(out.T):.1f} LUFS, true peak {tp:.1f} dBTP"
           + (f", bed {meter.integrated_loudness(np.stack([bed, bed]).T) + G:.1f} LUFS" if B else ""))
-    if B:
+    if vparts:
+        vl = meter.integrated_loudness(np.stack([vt, vt]).T) + G
+        msg = f"  voice {vl:.1f} LUFS"
+        if B:
+            on = voice_duck(vt, -1.0, 0.01, 0.01) < db(-0.5)  # where the voice speaks
+            if on.sum() > 0.5 * SR:
+                under = meter.integrated_loudness(np.stack([bed[on] * duck[on]] * 2).T) + G
+                msg += f"; bed under the voice {under:.1f} LUFS → {vl - under:.0f} LU under it (≈ 11 reads clearly)"
+        print(msg + (f"; mix {I - M['lufs']:+.1f} LU vs master.lufs — move voice.lufs to change it" if abs(I - M["lufs"]) > 1 else ""))
+    if B and not vparts:
         print(f"  Δ = {delta:+.1f} dB: every event sits lift + Δ over the bed")
+    if B:
         print("  lift (balance): " + "  ".join(f"{n}@{t:.2f} {d:+.0f}" for n, t, d in report if d is not None))
 
     if "--mux" in sys.argv:

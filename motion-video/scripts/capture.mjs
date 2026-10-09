@@ -121,7 +121,7 @@ function pageSetup({ slow, stream, hide }) {
 
 export async function openStage({ base, viewport = [432, 768], scale = 2.5, slow = 4, out = '.video/takes', locale = 'en-US',
   mocks = [], stream = null, init = null, hide = [], mobile = true, chrome = null } = {}) {
-  const { chromium } = await loadPlaywright();
+  const pw = await loadPlaywright(); const chromium = pw.chromium ?? pw.default?.chromium; // CJS builds: only on default
   const exe = chrome ?? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome'].find(p => existsSync(p));
   const browser = await chromium.launch({ ...(exe ? { executablePath: exe } : {}), headless: true,
     args: ['--run-all-compositor-stages-before-draw', '--disable-new-content-rendering-timeout', '--disable-threaded-animation', '--disable-checker-imaging'] });

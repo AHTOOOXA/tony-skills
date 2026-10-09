@@ -84,3 +84,23 @@ first.
 
 The slop look: centred title on a gradient, everything fading in, a logo at the end, the same move on every
 element, a vague headline. If your film could be any brand's, push the idea further.
+
+## Pulling a reference from the galleries
+
+Three public indexes of Opus 5.5 videos with their prompts. Use them to find a reference for a style or a job,
+to read how it was asked for, and to see how far a prompt reproduces. Read the post text too: the most-viewed
+work often doesn't publish its prompt (on claudevideo.org, videos with a prompt have a median of ~450 views,
+without one ~16k).
+
+| Index | Best for | How to pull it |
+|---|---|---|
+| zhuyansen / jasonzhu.ai — ~1,400 posts with ≥ 5k views, ~370 with prompt text | views + bookmarks + prompt text + category + size in one file | `gh api repos/zhuyansen/jasonzhu.ai/contents/src/content/opus-prompts/cases.json -H "Accept: application/vnd.github.raw"` → `.cases[]`: `prompt.text` (null when unpublished), `stats.views`, `stats.bookmarks`, `category`, `video.width/height` |
+| claudevideo.org — 1,276 videos | reach ranking and visual tags (`vertical`, `hand-drawn`, `product-ad`, `character-animation`…) | `curl https://claudevideo.org/wall.json` (index, no prompt text); the prompt is on `/videos/<slug>` between "THE PROMPT" and "MAKE ONE LIKE THIS"; ranked lists at `/videos/type/{product-ads,explainers,stories,motion-graphics}` |
+| Skillry — 513 videos, each with a live remake | filter by aspect ratio and tech; compare original vs remake | `gh api repos/yihui-dev/awesome-opus5-5-videos/contents/data/videos.json -H "Accept: application/vnd.github.raw"`; page `skillry.dev/ai-videos/opus-5-5/<slug>`. No view counts; ~46 % of its "prompts" are just the post text |
+
+Join them on the tweet id. Sort by views for ideas; by **bookmarks per view** for templates people reuse (the
+one-shape film: 19.4k bookmarks on 933k views). What the remakes show: a look reproduces only when the prompt
+pins it with numbers — canvas size, palette, line weight, frame rate of the drawing, a reference image; a
+one-line prompt remakes into an unrelated film. When you borrow, borrow the grammar and the numbers, not the
+content.
+

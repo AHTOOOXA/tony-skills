@@ -9,6 +9,9 @@
 //   node render.mjs comp.html -o out.mp4 [--audio mix.wav] [--fps 30] [--ss 2] [--sub 10]
 //   node render.mjs comp.html --stills 0,1.5,3.2 -o stills/      (PNG stills, blur included)
 //   node render.mjs comp.html --draft -o draft.mp4               (half size, no blur, fast)
+//   node render.mjs comp.html -o out.mp4 --keep-frames           (keep out.frames/ for --range)
+//   node render.mjs comp.html -o out.mp4 --range 4.2,6           (re-render only 4.2–6 s into the kept
+//                                                                  frames and re-encode — fast fixes)
 //
 // What it does right that a naive screenshot loop gets wrong:
 //  · PNG frames (no JPEG chroma loss), encoded as limited-range BT.709 with correct colour tags.
@@ -18,8 +21,11 @@
 //    never across a hard cut (__meta.cuts) — blending two shots makes mud.
 //  · Optional supersampling (--ss 2): render at 2× device pixels, Lanczos down — sharper type.
 //  · Static fine grain added at encode (--grain 3) so dark gradients don't band after platform re-encodes.
-//  · Fast capture via CDP (optimizeForSpeed) and parallel workers (--workers N).
-import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+//  · Fast capture via CDP (optimizeForSpeed) and parallel workers (--workers N), one browser each.
+//  · CSS/Web Animations are SEEKED to t (paused + currentTime), not frozen: an animation the comp
+//    declares in CSS still moves frame by frame instead of silently standing still.
+//  · Page errors, console errors and failed requests (a missing font or image) are printed once.
+import { mkdirSync, rmSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -30,7 +36,7 @@ const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const flag = k => args.includes(k);
 const comp = args.find(a => !a.startsWith('-') && /\.html?$/.test(a));
-if (!comp) { console.error('usage: node render.mjs comp.html -o out.mp4 [--audio a.wav] [--stills t,t] [--draft] [--ss 2] [--sub 10] [--workers N]'); process.exit(1); }
+if (!comp) { console.error('usage: node render.mjs comp.html -o out.mp4 [--audio a.wav] [--stills t,t] [--draft] [--ss 2] [--sub 10] [--workers N] [--keep-frames] [--range a,b]'); process.exit(1); }
 const out = path.resolve(opt('-o', 'out.mp4'));
 const draft = flag('--draft');
 const SS = Number(opt('--ss', 1));
@@ -40,6 +46,7 @@ const stills = opt('--stills', null)?.split(',').map(Number);
 const audio = opt('--audio', null);
 const CRF = opt('--crf', '16');
 const GRAIN = Number(opt('--grain', 3)); // static luma noise at encode against 8-bit banding of dark gradients; 0 = off
+const range = opt('--range', null)?.split(',').map(Number);
 
 async function loadPlaywright() {
   for (const base of [process.cwd(), path.dirname(path.resolve(comp))]) {
@@ -52,23 +59,29 @@ async function loadPlaywright() {
   for (let dir = process.cwd(); dir !== path.dirname(dir); dir = path.dirname(dir)) {
     const store = path.join(dir, 'node_modules/.pnpm');
     if (!existsSync(store)) continue;
-    const { readdirSync } = await import('node:fs');
     const pkg = readdirSync(store).filter(d => d.startsWith('playwright-core@')).sort().pop();
     if (pkg) return import(pathToFileURL(path.join(store, pkg, 'node_modules/playwright-core/index.mjs')).href);
   }
   console.error('Playwright not found. Run: npm i -D playwright && npx playwright install chromium');
   process.exit(1);
 }
-const { chromium } = await loadPlaywright();
+const pw = await loadPlaywright();
+const chromium = pw.chromium ?? pw.default?.chromium; // CJS builds expose it only on default
 const CHROME = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium']
   .find(p => existsSync(p));
-const browser = await chromium.launch({
+// One browser per worker: pages in one browser share its compositor and serialize captures.
+const launch = () => chromium.launch({
   ...(CHROME ? { executablePath: CHROME } : {}), headless: true,
   args: ['--allow-file-access-from-files', '--run-all-compositor-stages-before-draw', '--disable-threaded-animation',
     '--font-render-hinting=none', '--force-color-profile=srgb', '--hide-scrollbars'],
 });
+const browsers = [];
+const seen = new Set();
+const warn = msg => { if (!seen.has(msg)) { seen.add(msg); console.log(msg); } };
 
 async function openComp() {
+  const browser = await launch();
+  browsers.push(browser);
   const probe = await browser.newPage();
   await probe.goto(pathToFileURL(path.resolve(comp)).href);
   await probe.evaluate(() => window.__ready);
@@ -76,11 +89,13 @@ async function openComp() {
   await probe.close();
   const scale = draft ? 0.5 : SS;
   const page = await browser.newPage({ viewport: { width: meta.width, height: meta.height }, deviceScaleFactor: scale });
-  page.on('pageerror', e => console.log('pageerror:', e.message));
+  page.on('pageerror', e => warn(`pageerror: ${e.message}`));
+  page.on('console', m => { if (m.type() === 'error') warn(`console error: ${m.text()}`); });
+  page.on('requestfailed', r => warn(`request failed: ${r.url()} (${r.failure()?.errorText})`));
   await page.goto(pathToFileURL(path.resolve(comp)).href);
   await page.evaluate(() => window.__ready);
-  // kill any stray CSS animation/transition: every frame must be a pure function of t
-  await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important;animation-play-state:paused!important}' });
+  // Transitions depend on state changes, not on t: kill them. Animations are seeked in seek() instead.
+  await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important}' });
   const cdp = await page.context().newCDPSession(page);
   return { page, meta, cdp };
 }
@@ -99,7 +114,11 @@ async function shot(ctx, file) {
   writeFileSync(file, Buffer.from(data, 'base64'));
 }
 
-const seek = (page, t) => page.evaluate(async t => { await window.__seek(t); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }, t);
+const seek = (page, t) => page.evaluate(async t => {
+  await window.__seek(t);
+  for (const a of document.getAnimations()) { a.pause(); a.currentTime = t * 1000; } // CSS/WAAPI at exactly t
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+}, t);
 
 async function frame(ctx, t, file) {
   const { page, meta } = ctx;
@@ -128,26 +147,35 @@ if (stills) {
   mkdirSync(out, { recursive: true });
   for (const t of stills) await frame(ctx0, t, path.join(out, `still-${t.toFixed(2)}.png`));
   console.log(`stills → ${out}`);
-  await browser.close();
+  await Promise.all(browsers.map(b => b.close()));
   process.exit(0);
 }
 
 const N = Math.round(meta.duration * fps);
 const dir = out.replace(/\.mp4$/, '') + '.frames';
-rmSync(dir, { recursive: true, force: true });
-mkdirSync(dir, { recursive: true });
+// --range a,b: re-render only frames in [a, b] into the frames kept by an earlier --keep-frames run.
+let first = 0, last = N - 1;
+if (range) {
+  const kept = existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.png')).length : 0;
+  if (kept !== N) { console.error(`--range needs all ${N} frames in ${dir} (found ${kept}): render once with --keep-frames (same fps/size).`); process.exit(1); }
+  first = Math.max(0, Math.floor(range[0] * fps)); last = Math.min(N - 1, Math.ceil(range[1] * fps));
+} else {
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+}
+const todo = last - first + 1;
 const t0 = Date.now();
-const ctxs = [ctx0, ...await Promise.all(Array.from({ length: WORKERS - 1 }, openComp))];
+const ctxs = [ctx0, ...await Promise.all(Array.from({ length: Math.min(WORKERS, Math.ceil(todo / 30)) - 1 }, openComp))];
 for (const c of ctxs) c.meta.fps = fps;
-let next = 0, done = 0;
+let next = first, done = 0;
 await Promise.all(ctxs.map(async c => {
-  while (next < N) {
+  while (next <= last) {
     const i = next++;
     await frame(c, i / fps, path.join(dir, `${String(i).padStart(5, '0')}.png`));
-    if (++done % 60 === 0) console.log(`frame ${done}/${N}  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+    if (++done % 60 === 0) console.log(`frame ${done}/${todo}  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
   }
 }));
-await browser.close();
+await Promise.all(browsers.map(b => b.close()));
 
 // Encode: Lanczos to the target size, limited-range BT.709 with correct tags (setparams makes the
 // tags stick), x264 tuned to keep dark gradients and small type intact through platform re-encodes.
@@ -160,5 +188,5 @@ execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '
   '-x264-params', `aq-mode=3:keyint=${fps * 2}`, '-maxrate', '25M', '-bufsize', '50M',
   '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv',
   ...(audio ? ['-c:a', 'aac', '-b:a', '256k', '-shortest'] : []), '-movflags', '+faststart', out]);
-if (!flag('--keep-frames')) rmSync(dir, { recursive: true, force: true });
-console.log(`→ ${out}  (${N} frames, ${((Date.now() - t0) / 1000).toFixed(0)}s)`);
+if (!flag('--keep-frames') && !range) rmSync(dir, { recursive: true, force: true });
+console.log(`→ ${out}  (${todo}${range ? ` of ${N}` : ''} frames, ${((Date.now() - t0) / 1000).toFixed(0)}s)`);

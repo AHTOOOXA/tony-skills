@@ -7,7 +7,9 @@ Look at frames; don't just generate them. Every check below is a command.
 ```bash
 node scripts/render.mjs comp.html --stills 0,1.6,3.3,8 -o stills/     # 4 stills before anything else
 bash scripts/qa/sheets.sh out.mp4                                      # sheet.png (2 fps), phone.png (360 px), strips
-python3 scripts/qa/check_video.py out.mp4 [--cuts 3.8,14.2]            # tags, pops, flashes, frozen spans, rhythm
+python3 scripts/qa/check_video.py out.mp4 [--cuts 3.8,14.2] [--blur 1.6-1.96] [--loop]   # tags, pops, flashes, frozen, rhythm, fast moves, loop seam
+node scripts/qa/probe.mjs comp.html [--hz 10] [--query format=wide]    # from the DOM: __meta.inFrame elements never leave the
+                                                                       # frame/safe area; > 80 px/frame outside blur; carries at cuts
 uv run --with librosa --with pyloudnorm --with soundfile --with scipy --with pedalboard python scripts/qa/verify_audio.py sound.json
 node scripts/render.mjs comp.html -o out.mp4 --keep-frames             # keep frames, then fix a span cheaply:
 node scripts/render.mjs comp.html -o out.mp4 --range 4.2,6            # re-render 4.2–6 s only, re-encode
@@ -15,6 +17,10 @@ node scripts/render.mjs comp.html -o out.mp4 --range 4.2,6            # re-rende
 
 `render.mjs` also prints page errors, console errors and failed requests once each. A "request failed" for a
 font or image means the film is rendering with a fallback: fix it before looking at anything else.
+
+`probe.mjs` needs no render: it seeks the comp through every frame and reads element boxes after all transforms.
+Declare what must stay visible (`__meta.inFrame: ['#logo', {sel: '#cta', area: 'safe', from: 4}]`); exit code 1 on
+a violation, so run it before the first full render.
 
 `check_video.py` reports: colour tags (must be BT.709 limited), duration/fps, single-frame flashes
 (frame n differs from both neighbours while n−1 ≈ n+1), pops (a frame diff > 3× its neighbours and not a

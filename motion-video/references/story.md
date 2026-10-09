@@ -25,9 +25,14 @@ No numbers on screen without a source; label illustrative data as such.
 
 ## Reference-driven style
 
-Naming a style beats describing it. Take a reference film: frames every 0.5 s (`ffmpeg -vf fps=2`), write
-`style_guide.md` (palette hex, type family/weight/tracking, shot lengths, transitions, camera, grain, how text
-enters/exits) and `shotlist.md`. Take the grammar, never the content.
+Naming a style beats describing it. Find one with `scripts/refs.py search` (`inspiration.md`). Take a
+reference film: frames every 0.5 s (`ffmpeg -vf fps=2`), write `style_guide.md` (palette hex, type
+family/weight/tracking, shot lengths, transitions, camera, grain, how text enters/exits) and `shotlist.md`.
+Take the grammar, never the content.
+Measure the reference's rhythm before you write the guide: `python3 scripts/qa/check_video.py ref.mp4`
+gives the share of still frames, the cuts and whether they come in bursts. onetake's reference
+measured "34 % dead-still, 7 hard cuts in two bursts". A film built without measuring came out on a
+uniform rhythm, twice.
 
 ## Characters and mascots
 

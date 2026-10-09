@@ -1,6 +1,7 @@
 """motion-video · qa/verify_audio.py — check a mix by measurement (the agent can't listen).
 
     uv run --with librosa --with pyloudnorm --with soundfile --with scipy --with pedalboard python verify_audio.py sound.json [--hero T]
+    … --with matplotlib python verify_audio.py sound.json --png spec.png   # + a spectrogram with events/cues marked
 
 Reads the spec (events, bed, silences) and the WAV it produced. Checks:
   loudness      integrated ≤ target + 1 and ≥ target − 6 LU (sparse mixes run low), true peak ≤ ceiling
@@ -12,6 +13,9 @@ Reads the spec (events, bed, silences) and the WAV it produced. Checks:
   quiet         ≥ 15 % of 100 ms windows sit ≥ 20 LU under the loudest — the mix breathes
   mono          folding to mono loses ≤ 1 dB (pans and reverb don't cancel)
   silences      the declared silences are ≥ 12 LU under the bed level
+Warnings (never fail; mgaudio qc thresholds, calibrated on music masters): sub < 60 Hz > 45 % of the energy,
+  2–5 kHz > 7.5 % (harsh), < 0.2 % above 5 kHz (dull), < 18 % under 250 Hz (thin), a gap > 0.6 s under -45 LUFS-M.
+--png out.png  spectrogram + loudness curve; events white (hero gold), cues.json green, silences blue. Read it.
 Exit code 1 if any check fails, so it works in loops.
 """
 import json
@@ -120,6 +124,90 @@ for a, b in spec.get("silences", []):
     if b - a >= 0.2 and spec.get("bed"):
         s = 10 * np.log10(np.mean(np.square(kx[:, int((a + 0.08) * sr):int((b - 0.02) * sr)])) + 1e-12)
         print(f"silence    {a:.2f}–{b:.2f}: {s - (spec['bed']['lufs'] + 0.7):+.0f} LU vs the bed")
+
+# ---------- band balance & gaps (mgaudio qc thresholds, calibrated on music masters): warnings, never fails ----------
+from scipy.signal import welch
+mid = y.mean(axis=0)
+fq, P = welch(mid, sr, nperseg=8192)
+tot = P[(fq >= 20) & (fq <= 20000)].sum() + 1e-30
+BANDS = [("sub", 20, 60), ("bass", 60, 250), ("lowmid", 250, 2000), ("presence", 2000, 5000), ("brilliance", 5000, 12000), ("air", 12000, 20000)]
+bands = {n: 100 * P[(fq >= lo) & (fq < hi)].sum() / tot for n, lo, hi in BANDS}
+print("balance    " + "  ".join(f"{n} {v:.1f}%" for n, v in bands.items()))
+mom_hop = int(0.05 * sr)
+mt = np.arange(0, max(1, y.shape[1] - int(0.4 * sr)), mom_hop)
+mom = np.array([-0.691 + 10 * np.log10(np.mean(np.square(kx[:, i:i + int(0.4 * sr)])) * 2 + 1e-20) for i in mt])  # ≈ LUFS-M
+mtc = mt / sr + 0.2
+gap = run = 0.0
+for q, tc in zip(mom, mtc):
+    run = run + 0.05 if (q < -45 and 0.3 < tc < y.shape[1] / sr - 0.3) else 0.0
+    gap = max(gap, run)
+warn = []
+if bands["sub"] > 45:
+    warn.append(f"sub < 60 Hz is {bands['sub']:.0f}% of the energy (> 45 %): boomy, and phones drop it")
+if bands["presence"] > 7.5:
+    warn.append(f"2–5 kHz is {bands['presence']:.1f}% (> 7.5 %): reads harsh")
+if bands["brilliance"] + bands["air"] < 0.2:
+    warn.append("almost nothing above 5 kHz: dull")
+if bands["sub"] + bands["bass"] < 18:
+    warn.append(f"under 250 Hz is {bands['sub'] + bands['bass']:.0f}% (< 18 %): thin" + ("" if spec.get("bed", {}).get("kind") == "music" else " — normal for SFX over an ambience bed"))
+if gap > 0.6:
+    warn.append(f"a {gap:.2f} s gap under -45 LUFS-M" + (" (no bed: expected for a sparse SFX mix)" if not spec.get("bed") else " — meant? (a declared silence is 0.3–0.5 s)"))
+for w_ in warn:
+    print(f"  warning: {w_}")
+if warn:
+    print("  (warnings only: thresholds come from music masters — a sparse SFX/ambience mix can trip them by design)")
+
+if "--png" in sys.argv:  # spectrogram with every event, cue and silence marked — Read the PNG
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from scipy.signal import stft
+    png = Path(sys.argv[sys.argv.index("--png") + 1])
+    dur = y.shape[1] / sr
+    f_, t_, Z = stft(mid, sr, nperseg=2048, noverlap=2048 - 256)
+    S = 20 * np.log10(np.abs(Z) + 1e-9)
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(14, 7.5), sharex=True, gridspec_kw={"height_ratios": [1, 3]})
+    tt = np.arange(y.shape[1]) / sr
+    step = max(1, y.shape[1] // 6000)
+    a1.fill_between(tt[::step], -np.abs(mid[::step]), np.abs(mid[::step]), color="#3b6fd6", lw=0)
+    a1.set_ylim(-1, 1)
+    a1.set_yticks([])
+    a1b = a1.twinx()
+    a1b.plot(mtc, mom, color="#e07b2a", lw=1)
+    a1b.set_ylim(-60, 0)
+    a1b.set_ylabel("LUFS-M")
+    a2.pcolormesh(t_, f_, S, shading="auto", cmap="magma", vmin=S.max() - 90, vmax=S.max())
+    a2.set_yscale("log")
+    a2.set_ylim(30, sr / 2)
+    a2.set_yticks([50, 100, 300, 1000, 3000, 8000, 16000], ["50", "100", "300", "1k", "3k", "8k", "16k"])
+    for fb in (300, 8000):  # the phone-speaker band
+        a2.axhline(fb, color="white", lw=0.6, ls=":", alpha=0.6)
+    for a, b in spec.get("silences", []):
+        for ax in (a1, a2):
+            ax.axvspan(a, b, color="#5ad1ff", alpha=0.18, lw=0)
+    cpath = spec_path.parent / spec.get("cues", "cues.json")
+    if cpath.exists():
+        for i, (k, v) in enumerate(json.loads(cpath.read_text()).items()):
+            if isinstance(v, (int, float)) and 0 <= v <= dur:
+                a2.axvline(v, color="#9be564", lw=0.8, ls="--", alpha=0.8)
+                a2.text(v, 34 * (1.6 ** (i % 3)), k, color="#9be564", fontsize=8, rotation=90, va="bottom",
+                        bbox=dict(facecolor="black", alpha=0.6, lw=0, pad=1))
+    hero_at = hero_t if len(ev) >= 2 else None
+    for i, e in enumerate(ev):
+        hero_ev = hero_at is not None and abs(e["t"] - hero_at) < 1e-6
+        c = "#ffd23f" if hero_ev else "#ffffff"
+        a2.axvline(e["t"], color=c, lw=1.6 if hero_ev else 0.8, alpha=0.9)
+        a1.axvline(e["t"], color=c if hero_ev else "#888888", lw=0.8)
+        nm = (e.get("sound") or e["layers"][0]["sound"]) + (" (hero)" if hero_ev else "")
+        a2.text(e["t"], sr / 2 / (1.7 ** (i % 4)) * 0.9, nm, color=c, fontsize=8, rotation=90, va="top",
+                bbox=dict(facecolor="black", alpha=0.6, lw=0, pad=1))
+    a2.set_xlim(0, dur)
+    a2.set_xlabel("seconds  (white: events, gold: hero, green dashed: cues, blue: silences, dotted: 300 Hz–8 kHz phone band)")
+    a1.set_title(f"{spec.get('out', 'audio.wav')}   {I:.1f} LUFS   TP {tp:.1f} dBTP   sub {bands['sub']:.0f}%  bass {bands['bass']:.0f}%  "
+                 f"presence {bands['presence']:.1f}%" + ("   FAIL: " + ", ".join(fails) if fails else ""), fontsize=10)
+    fig.tight_layout()
+    fig.savefig(png, dpi=90)
+    print(f"spectrogram → {png}")
 
 print("FAIL: " + ", ".join(fails) if fails else "PASS")
 sys.exit(1 if fails else 0)

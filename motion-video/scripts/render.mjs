@@ -35,8 +35,11 @@ import { pathToFileURL } from 'node:url';
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const flag = k => args.includes(k);
-const comp = args.find(a => !a.startsWith('-') && /\.html?$/.test(a));
+// The comp may carry a query ("comp.html?format=wide&lang=ru"): the file is resolved without it, the page gets it.
+const compArg = args.find(a => !a.startsWith('-') && /\.html?(\?.*)?$/.test(a));
+const [comp, compQuery] = compArg ? compArg.split(/\?(.*)/s) : [];
 if (!comp) { console.error('usage: node render.mjs comp.html -o out.mp4 [--audio a.wav] [--stills t,t] [--draft] [--ss 2] [--sub 10] [--workers N] [--keep-frames] [--range a,b]'); process.exit(1); }
+const compURL = pathToFileURL(path.resolve(comp)).href + (compQuery ? `?${compQuery}` : '');
 const out = path.resolve(opt('-o', 'out.mp4'));
 const draft = flag('--draft');
 const SS = Number(opt('--ss', 1));
@@ -83,7 +86,7 @@ async function openComp() {
   const browser = await launch();
   browsers.push(browser);
   const probe = await browser.newPage();
-  await probe.goto(pathToFileURL(path.resolve(comp)).href);
+  await probe.goto(compURL);
   await probe.evaluate(() => window.__ready);
   const meta = await probe.evaluate(() => window.__meta);
   await probe.close();
@@ -92,12 +95,12 @@ async function openComp() {
   page.on('pageerror', e => warn(`pageerror: ${e.message}`));
   page.on('console', m => { if (m.type() === 'error') warn(`console error: ${m.text()}`); });
   page.on('requestfailed', r => warn(`request failed: ${r.url()} (${r.failure()?.errorText})`));
-  await page.goto(pathToFileURL(path.resolve(comp)).href);
+  await page.goto(compURL);
   await page.evaluate(() => window.__ready);
   // Transitions depend on state changes, not on t: kill them. Animations are seeked in seek() instead.
   await page.addStyleTag({ content: '*,*::before,*::after{transition:none!important}' });
   const cdp = await page.context().newCDPSession(page);
-  return { page, meta, cdp };
+  return { page, meta, cdp, scale };
 }
 
 // Average sub-frames in LINEAR light: 16-bit RGB, ~sRGB gamma 2.2 → linear, tmix, back.
@@ -110,7 +113,11 @@ function blend(subDir, n, file) {
 
 // Fast capture: CDP with optimizeForSpeed (Playwright's PNG path is ~5–10× slower on noisy frames).
 async function shot(ctx, file) {
-  const { data } = await ctx.cdp.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true });
+  // Explicit clip at the comp's size and scale: without it, Chrome's own headless window (not Playwright's
+  // emulated viewport) decides the size — frames came out 87 px short and at the wrong device scale.
+  const { width, height } = ctx.meta;
+  const { data } = await ctx.cdp.send('Page.captureScreenshot', { format: 'png', optimizeForSpeed: true,
+    captureBeyondViewport: true, clip: { x: 0, y: 0, width, height, scale: ctx.scale } });
   writeFileSync(file, Buffer.from(data, 'base64'));
 }
 

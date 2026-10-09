@@ -4,7 +4,7 @@
 
 Platform UI covers the frame: the right rail (likes, comments, share), the caption and CTA bar at the bottom,
 the top bar. Combined TikTok + Reels safe area on **1080×1920: x 65–940, y 270–1248**. The template exposes
-it as `SAFE`. Footage and a mascot's body may bleed outside; words may not.
+it as `SAFE` (per format: see the table under Formats). Footage and a mascot's body may bleed outside; words may not.
 (Meta Reels ads guide: keep 14 % top, 35 % bottom, 6 % sides free. TikTok: depends on caption length;
 third-party ad specs give ~130 px top, 484 px bottom, 140 px right.) HyperFrames' looser box:
 x 108–972, y 192–1728, nothing important below y ≈ 1600.
@@ -44,7 +44,46 @@ limited-range BT.709 with correct tags — don't re-encode with a plain `ffmpeg 
 
 ## Formats
 
-9:16 first. Then 1:1 and 16:9 from the SAME timeline via the layout function (`?format=square|wide` in the
-template) — reframe type and UI per format, never crop a 16:9 render to vertical. Frame 0 is the poster
+9:16 first. Then 4:5, 1:1 and 16:9 from the SAME timeline via the layout function (`?format=portrait|square|wide`
+in the template) — reframe type and UI per format, never crop a 16:9 render to vertical. Frame 0 is the poster
 (platforms ignore cover metadata): make the hook settled on frame 0 rather than swapping in a poster frame
 that differs from frame 1 (that flashes).
+
+| Format | Size | Where | Safe area for words (`SAFE`) |
+|---|---|---|---|
+| `vertical` 9:16 | 1080×1920 | TikTok, Reels, Shorts, Stories | x 65–940, y 270–1248 (above) |
+| `portrait` 4:5 | 1080×1350 | Instagram/Facebook feed, LinkedIn and X feeds on mobile — the tallest a feed shows uncropped | x 108–972, y 135–1215 |
+| `square` 1:1 | 1080×1080 | feeds, Telegram | 6 % sides, 8 % top, 14 % bottom |
+| `wide` 16:9 | 1920×1080 | YouTube, X/LinkedIn desktop, landing pages | same rule |
+
+**4:5 notes.** Meta's feed guidance is "keep text and CTAs in the central 80 %" — 10 % margins, the box above
+(third-party ad-spec sites, not Meta's own page: unverified). The Instagram profile grid shows 3:4 tiles
+(since Jan 2025), which trims a 4:5 frame by ~34 px on each side — inside the margins already. A 4:5 video
+that also runs as a Reel is shown in the 9:16 player with the Reels UI over its lower part, so keep the
+words above ~y 1000 if it doubles as one (unverified; check a test post). LinkedIn's video player overlays
+nothing big in-feed, but the caption sits below — the first frame still has to read as the poster.
+
+## Languages: one composition, many cuts
+
+`?lang=ru` in the template, every string through `tr(key)` from one `STRINGS` table. Never fork the file per
+language: every later motion fix would be made twice, and the cuts drift apart. (onetake: the source language
+must stay pixel-identical after the table is added — render a few stills before and after and compare.)
+- **Write each language, don't translate.** Its own word order and length for about the same seconds; a line
+  that names a UI label uses the label the localised UI actually shows. Wordplay rarely survives: write a
+  new line rather than explain the old one.
+- **Lengths differ by ~±30 %** (German and Russian run long, Chinese/Japanese short but need bigger type):
+  line breaks live per language in the table, and every language gets its own layout pass —
+  `checkSafe('#hook', …)` in `__ready` logs any element whose words leave the safe area; then look at
+  `--stills` per language and format. Shrink type only down to the floors above; past that, cut words.
+- **Fonts per script.** The display face may have no Cyrillic/Greek/CJK (the browser falls back silently):
+  load a matching face for that language only and put it second in the stack, so Latin keeps the house face.
+- **Timing per language from files, not from the comp.** A voice in another language has its own pauses and
+  word order: generate its `words.json`/`cues.json` with `vo.py` (`cues.${LANG}.json` in `__ready`) and key
+  beats to *words that mean the same thing* (`word(words, 'бесплатно')`), not to the source's seconds. Where
+  one language talks longer before a payoff, start the payoff earlier in its sentence instead of slowing the
+  move (a move played at < ~0.5× or > ~1.4× its authored speed looks wrong).
+- **Match loudness per language as the last step.** A denser voice mastered to the same peak came out 5 LU
+  louder than the source cut (onetake). Measure each language's final mix (`check_video.py` prints integrated
+  LUFS) and bring them within ~1 LU of each other.
+- Dates, numbers and currency follow the locale (9 октября, 1 290 ₽ with a thin no-break space); switching a
+  symbol without converting the number is a different claim — ask.

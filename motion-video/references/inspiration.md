@@ -87,20 +87,50 @@ element, a vague headline. If your film could be any brand's, push the idea furt
 
 ## Pulling a reference from the galleries
 
-Three public indexes of Opus 5.5 videos with their prompts. Use them to find a reference for a style or a job,
-to read how it was asked for, and to see how far a prompt reproduces. Read the post text too: the most-viewed
-work often doesn't publish its prompt (on claudevideo.org, videos with a prompt have a median of ~450 views,
-without one ~16k).
+Three public indexes collect AI-made videos from X with their stats and, where the author published one,
+the prompt. `scripts/refs.py` joins them on the tweet id into one local file
+(`~/.cache/motion-video/refs.json`, about 2,350 posts, about 780 with a real prompt) that you can search
+in a second. Use it to find a reference for a style or a job, read how it was asked for, and see how far a
+prompt actually reproduces.
 
-| Index | Best for | How to pull it |
+```bash
+python3 $S/scripts/refs.py search "line art" --has-prompt --sort saves-per-view   # templates people reuse
+python3 $S/scripts/refs.py search --aspect 9:16 --tag product-ad --sort views       # what reached people
+python3 $S/scripts/refs.py search product launch --has-prompt -n 5 --full           # read the briefs
+python3 $S/scripts/refs.py search --tech three.js --category explainer --sort saves
+python3 $S/scripts/refs.py show 2103273003555402193        # one post: stats, size, every prompt we have
+python3 $S/scripts/refs.py facets                          # the tags, categories and tech you can filter on
+python3 $S/scripts/refs.py update --fetch-prompts 200      # refresh; also pull prompts from claudevideo pages
+```
+
+Search words match title, summary, tags, post text and prompts in any language. Matches in the title,
+summary or tags come first and matches only inside a long prompt come last, with a header between the
+groups. The cache refreshes itself after 14 days. `--has-prompt` means a real brief rather than a caption.
+Each hit shows views, saves, saves per view, author, aspect and length, the first line of the prompt and
+the post URL.
+
+| Index | What it adds to the join | Caveats |
 |---|---|---|
-| zhuyansen / jasonzhu.ai — ~1,400 posts with ≥ 5k views, ~370 with prompt text | views + bookmarks + prompt text + category + size in one file | `gh api repos/zhuyansen/jasonzhu.ai/contents/src/content/opus-prompts/cases.json -H "Accept: application/vnd.github.raw"` → `.cases[]`: `prompt.text` (null when unpublished), `stats.views`, `stats.bookmarks`, `category`, `video.width/height` |
-| claudevideo.org — 1,276 videos | reach ranking and visual tags (`vertical`, `hand-drawn`, `product-ad`, `character-animation`…) | `curl https://claudevideo.org/wall.json` (index, no prompt text); the prompt is on `/videos/<slug>` between "THE PROMPT" and "MAKE ONE LIKE THIS"; ranked lists at `/videos/type/{product-ads,explainers,stories,motion-graphics}` |
-| Skillry — 513 videos, each with a live remake | filter by aspect ratio and tech; compare original vs remake | `gh api repos/yihui-dev/awesome-opus5-5-videos/contents/data/videos.json -H "Accept: application/vnd.github.raw"`; page `skillry.dev/ai-videos/opus-5-5/<slug>`. No view counts; ~46 % of its "prompts" are just the post text |
+| zhuyansen / jasonzhu.ai: ~1,430 posts with ≥ 5k views | views and bookmarks, video size and length, a curated prompt (often found in the author's reply), category, tools, an English summary | only posts above 5k views; about a quarter have a prompt |
+| claudevideo.org: ~1,280 videos | visual tags (`vertical`, `hand-drawn`, `product-ad`, `kinetic-type`…), theme, post text, small posts too | the index has no prompt text, so `update --fetch-prompts N` reads it from `/videos/<slug>` (cached per slug) |
+| Skillry: ~510 videos, each with a live remake | tech tags (`canvas`, `threejs`, `gsap`, `shader`…), a remake page | no stats; ~46 % of its "prompts" are only the post text (flagged `post text`, so `--has-prompt` skips them) |
 
-Join them on the tweet id. Sort by views for ideas; by **bookmarks per view** for templates people reuse (the
-one-shape film: 19.4k bookmarks on 933k views). What the remakes show: a look reproduces only when the prompt
-pins it with numbers — canvas size, palette, line weight, frame rate of the drawing, a reference image; a
-one-line prompt remakes into an unrelated film. When you borrow, borrow the grammar and the numbers, not the
-content.
+What the data says:
 
+- **The most-viewed work often hides its prompt.** 61 of the 100 most-viewed posts publish no usable
+  prompt. On claudevideo.org the median video with a prompt has ~450 views and the median video without
+  one has ~16k. Read the post and the author's replies, and look at the frames.
+- **Sort by views for ideas, and by saves per view for templates people reuse.** The one-shape UI film
+  has 20k bookmarks on 1.0M views (1.9 %). The typical viral showreel sits at 0.3–0.8 %. `saves-per-view`
+  ignores posts under 5k views, because their ratios are noise.
+- **Remakes reproduce only what the prompt pins with numbers**: canvas size, palette hex, line weight,
+  the frame rate of the drawing, a reference image. On Skillry, a one-line prompt remakes into an
+  unrelated film. The showreel one-liner, copied verbatim to test consistency, came back as a Bauhaus
+  grid (@zaqailo).
+- **Borrow the grammar and the numbers, not the content.** Take the structure of a brief (`<inputs>` →
+  `<direction>` → `<structure>` → `<gotchas>`), its banned list, its beat map. Leave behind its brand,
+  its story and its assets.
+- Before you write `style_guide.md` from a reference, measure it (`story.md`, "Reference-driven style").
+- The numbers are snapshots (stats checked early October 2026), and attribution is the creator's own
+  claim. Some posts are model-vs-model comparisons (`--category comparison`); filter them out when you
+  want films.

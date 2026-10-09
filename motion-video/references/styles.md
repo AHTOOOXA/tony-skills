@@ -4,7 +4,10 @@ A library, not a rulebook. Each card lists what a style is for, the signature fe
 for, a route that works in this skill's renderer, what goes wrong, and the sound that fits. The numbers are
 good starting points. Most come from the prompts **and the source code** of mg-styles-15 (15 films, one per
 style, made by Opus writing code, MIT). Where the code disagrees with its own prompt, the card says so;
-`(inferred)` marks anything we added ourselves.
+`(inferred)` marks anything we added ourselves. Each card's **References** are real posts found with
+`scripts/refs.py`, with stats as of early October 2026. "Full prompt" marks the ones that publish their
+brief, and the query that finds more is in the heading. Watch them for the look and read the prompts for the numbers
+(`inspiration.md`, "Pulling a reference from the galleries").
 
 ## Contents
 1. Picking and locking a style
@@ -70,6 +73,11 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 
 **Sound:** playful jazzy pizzicato or xylophone; cartoon SFX (strike, fwoosh, pop, poof, sparkle) on the exact frame. hanif: put each SFX ~0.03 s before contact.
 
+**References** (more: `refs.py search --tag hand-drawn --tag character-animation --has-prompt --sort saves`):
+- [@pradeepXkapoor](https://x.com/pradeepXkapoor/status/2103099194693271874), 73k views, 555 saves, full prompt: a director's brief whose character rig takes a "style skin" prop (line weight, outline boil, clay on twos), with a render-stills-and-critique loop.
+- [@ALSK_ai](https://x.com/ALSK_ai/status/2103135536634630632), 108k views, 783 saves: a 4-minute 2D short drawn frame by frame from a short open prompt plus one character reference image.
+- [@pleometric](https://x.com/pleometric/status/2102572941699354900), 411k views, 9:16: a hand-drawn imagined TikTok feed; the only reference given was one frame of another viral animation.
+
 **Source:** mg-styles `prompts/05-cel-boil.md`, `demos/05-cel-boil/js/engine.js` (boil, `inkW`, `outline`, `fillShape`), `scene.js` (`SCHED`, `REG`, smear frames); hanif `references/motion.md` (exposure, boil as a choice).
 
 ### Line art (one continuous line)
@@ -100,6 +108,11 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 
 **Sound:** minimal felt piano and a soft string swell. A pen-on-paper whisper whose loudness follows tip speed. A delicate chime on the fill.
 
+**References** (more: `refs.py search pencil --sort saves`):
+- [@HindolSengupta](https://x.com/HindolSengupta/status/2103906559109787845), 275k views, 2.6k saves: four minutes of sketchy pencil line on parchment with chaptered narration. A quiet line can hold a long film. No prompt published.
+- [@dotey](https://x.com/dotey/status/2103964025683927166), 35k views, full prompt (Chinese): rice-paper line drawing alternating with gold on black. The music is the clock and every cut lands on a beat. Each shot gets one calligraphy keyword and one line drawing. The beat grid and shot list come before the render.
+- [@morpheusdv](https://x.com/morpheusdv/status/2102910531560731063), 45k views, 607 saves, full prompt: black ink on off-white, learned from an attached reference image, with "not a slideshow" spelled out.
+
 **Source:** mg-styles `prompts/02-line-art.md`, `demos/02-line-art/film.js` (corner density, camera, tip, trail), `tools/retime.py`.
 
 ### Brush ink + watercolour
@@ -121,6 +134,11 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 
 **Sound:** a soft bed, foley per contact; no continuous pencil-scratch bed. hanif tested one and rejected it because it fights everything.
 
+**References** (more: `refs.py search brush --sort saves`):
+- [@shfred0](https://x.com/shfred0/status/2102495989194236158), 373k views, 1.7k saves: two minutes of JS-drawn brush strokes, frame by frame, from "animate its own life, from day 0 to now".
+- [@petergostev](https://x.com/petergostev/status/2103033635397898433), 243k views, 803 saves, full prompt: a dance recreated in bold moving brushstrokes synced to music, with everything, the music included, drawn in code.
+- [@mablesjoseph](https://x.com/mablesjoseph/status/2103465246014746943), 11k views: a 45 s watercolour short with every brushstroke coded. The post gives the cost: 163 model calls, ~$34, 6¾ h. No prompt; `search watercolor` finds more.
+
 **Source:** hanif `references/styles.md` § 2, `traps.md`.
 
 ### Textured editorial (storybook)
@@ -139,6 +157,11 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 **Traps:** a flat fill reads unfinished; blob characters (build rigs with anatomy).
 
 **Sound:** a quiet bed; SFX from the timeline.
+
+**References** (more: `refs.py search storybook`):
+- [@hanifproduktif](https://x.com/hanifproduktif/status/2102742924148830211), 4.7k views: storybook ants hauling leaves, by the author of the hanif skill this card draws on.
+- [@nicekate8888](https://x.com/nicekate8888/status/2102575622912631261), 14k views: a crayon-textured 90 s character short. Her embroidery koi ([@nicekate8888](https://x.com/nicekate8888/status/2103308087319007283), 16k) shows what naming the physical medium gets you.
+- [@AstroTheWizard](https://x.com/AstroTheWizard/status/2103629247751618782), 1.3k views, full prompt: an autonomous 60 s storybook explainer, topic in and film out. `search crayon` finds more.
 
 **Source:** hanif `references/styles.md` § 1, `SKILL.md` hard rules.
 
@@ -168,6 +191,11 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 
 **Sound:** upbeat future bass or pop ~120 BPM; pop, boing and whoosh on each entry, frame-synced.
 
+**References** (more: `refs.py search flat --sort saves`):
+- [@other__reality](https://x.com/other__reality/status/2102514581684052169), 2.5M views, 4.2k saves: a flat-cartoon music video (p5.js + p5.brush) with a boxy character on a treadmill. No prompt.
+- [@mmmiyama_D](https://x.com/mmmiyama_D/status/2103384986661671058), 124k views, 829 saves: a 15 s flat-design self-introduction, with the production kit in a linked article. The sibling [@mmmiyama_D](https://x.com/mmmiyama_D/status/2103319199817064764) is a 30 s PR film made in code only.
+- [@makwanatejas170](https://x.com/makwanatejas170/status/2103922986155917592), 119k views, 858 saves: a flat orange bowl swinging on a string, made from "literally copy this guy's motion quality" plus a reference clip.
+
 **Source:** mg-styles `prompts/01-flat-vector.md`, `demos/01-flat-vector/index.html`.
 
 ### Shape morph
@@ -191,6 +219,11 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 - A morph without rotation or squash looks like interpolation.
 
 **Sound:** a rhythmic plucky arpeggio; a pitched whoosh per morph landing on the beat.
+
+**References** (more: `refs.py search morph --has-prompt --sort saves`):
+- [@twoclipping](https://x.com/twoclipping/status/2103273003555402193), 1.0M views, 20k saves (1.9 %), the most-saved template in the data. Full XML prompt: one shape never cuts, a cursor drives every change, and a beat map sets the timing.
+- [@verbove](https://x.com/verbove/status/2103483957266268381), 16k views, 2.2 % saves per view: the same grammar applied to one product's story (sign-up → pin → globe → match).
+- [@rossaxbt](https://x.com/rossaxbt/status/2107121188027707651), 37k views, 634 saves, full prompt: an orange dot carries every scene (toggle → the dot over a letter → spring graph → …).
 
 **Source:** mg-styles `prompts/08-morph.md`, `demos/08-morph/index.html`.
 
@@ -216,6 +249,10 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 - Motion-blur sub-samples straddling a hard change (snap cut times to whole frames: `round(t·30)/30`).
 
 **Sound:** minimal techno or clicks; a pitched click per flip, kick on quarters.
+
+**References** (more: `refs.py search poster --has-prompt`):
+- [@techhalla](https://x.com/techhalla/status/2103411244468498547), 33k views, 334 saves, full prompt for a 20 s kinetic-poster bumper. It pins 1080² at 60 fps, a loop, a strict three-hex palette, 2–4 px misregistration on impact frames, a beat grid and banned clichés. The palette isn't primaries, but the grammar is this card's.
+- [@zaqailo](https://x.com/zaqailo/status/2103768009017835623), 159 views: a red/blue/yellow/black Bauhaus grid at 128 BPM that came out of the showreel one-liner. The model chose the look, so the prompt won't reproduce it. True Bauhaus films are rare in the indexes (`search bauhaus`).
 
 **Source:** mg-styles `prompts/09-bauhaus.md`, `demos/09-bauhaus/film.js`.
 
@@ -246,6 +283,11 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 
 **Sound:** bright plucky tech (FM marimba), soft clicks per landing, an airy whoosh on the pull-back.
 
+**References** (more: `refs.py search isometric --sort saves-per-view`):
+- [@Sayan_shanky](https://x.com/Sayan_shanky/status/2103736579449868515), 3.8k views: a 2.5-minute isometric data-centre explainer with labelled callouts for power, data, heat and coolant, from one line: "show me what goes on inside an AI data centre."
+- [@itsnotryan](https://x.com/itsnotryan/status/2107013497813172593), 7.3k views, 2.5 % saves per view: an isometric 3D scene made in one attempt. No prompt.
+- [@blueemi99](https://x.com/blueemi99/status/2105804692811137242), 141k views: a voxel island on a slow orbit, the neighbouring diorama look. It rotates the camera, which this card forbids.
+
 **Source:** mg-styles `prompts/03-isometric.md`, `demos/03-isometric/js/world.js`, `render.js`, `anim.js`.
 
 ### Faceted low-poly poster (ambient loops)
@@ -265,6 +307,10 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 **Traps:** jittery small facets; motions not periodic in the loop length (a visible seam).
 
 **Sound:** pads, sparse bells and wind in bars that divide the loop; a few diegetic sounds; no music hook.
+
+**References** (more: `refs.py search low-poly --sort saves`):
+- [@blak3shao](https://x.com/blak3shao/status/2105674103109914755), 16k views, 361 saves (2.3 %): low-poly fruit with PS2-style textures tumbling into a pinwheel on white. The author says references and adjustable sliders shaped the look.
+- [@wshuyi](https://x.com/wshuyi/status/2103308292613345504), 23k views: a 6-minute low-poly folk tale with cloned-voice narration, made end to end in Claude Code. Both are 3D low-poly; the indexes have no faceted 2D poster loops yet.
 
 **Source:** hanif `references/styles.md` § 5.
 
@@ -296,6 +342,10 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 
 **Sound:** a clean tech-explainer bed, UI clicks, ticking during count-ups, a soft whoosh on camera moves.
 
+**References** (more: `refs.py search sticker`):
+- [@thismacapital](https://x.com/thismacapital/status/2107006703489159314), 12k views: a data-driven motion graphic with generated stickers (ComfyUI) and an ElevenLabs voice, made in three hours. No prompt.
+- [@deedydas](https://x.com/deedydas/status/2103141339651350646), 331k views, 5.4k saves: an 8-minute 3Blue1Brown-style explainer of a research paper. The look is different, but it sets the bar for a dense, exact explainer. `search explainer --has-prompt --sort saves` finds more.
+
 **Source:** mg-styles `prompts/19-paperclip.md`, `demos/19-paperclip/index.html`, `cues.json`.
 
 ### Collage / cut-out
@@ -320,6 +370,11 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 - Assets you can't license (use CC0 / public domain).
 
 **Sound:** vinyl crackle, a jazzy boom-bap bed, paper rustles, scissor snips, slaps, a comic pop.
+
+**References** (more: `refs.py search collage`):
+- [@koldo2k](https://x.com/koldo2k/status/2103129343253778767), 73k views, 940 saves, full prompt: vintage photo landscapes plus black-and-white newspaper cut-outs (halftone, white paper border, soft shadow), with grain, vignette and flicker, in an infinite-zoom loop.
+- [@ring_hyacinth](https://x.com/ring_hyacinth/status/2102986085328716066), 58k views, 504 saves: a torn-paper collage short, p5.js + p5.brush frames over generated backdrops.
+- [@kevin_t_ngo](https://x.com/kevin_t_ngo/status/2102437977435893771), 651k views, 2.9k saves: a paper-cutout story built on one question ("What do you love?"). No prompt; `search paper cut` finds more.
 
 **Source:** mg-styles `prompts/06-collage.md`, `demos/06-collage/index.html`.
 
@@ -352,6 +407,11 @@ style, made by Opus writing code, MIT). Where the code disagrees with its own pr
 - Fonts without the script's glyphs (tofu).
 
 **Sound:** a bouncy variety bed (pizzicato, bass, claps); boing, pop, ding, slide whistle, record scratch.
+
+**References** (more: `refs.py search captions --aspect 9:16 --sort saves`):
+- [@ladprofit](https://x.com/ladprofit/status/2103148835270971419), 21k views, 334 saves: a vertical ad with bold word-by-word captions over flat cartoon hands. One prompt researched, scripted, voiced and rendered it.
+- [@Lucas_IA_](https://x.com/Lucas_IA_/status/2103152093733253544), 61k views, 1.1k saves (1.9 %): a vertical hand-drawn ad with captions (JS frames via HyperFrames, ElevenLabs voice). The post is a tutorial.
+- [@YarHmm](https://x.com/YarHmm/status/2103505435802341449), 54k views: a vertical Arabic promo with bold kinetic type, where the post describes the method (Remotion; camera-shutter sounds as the only SFX). None of the three is full variety-show style.
 
 **Source:** mg-styles `prompts/18-hanazi.md`, `demos/18-hanazi/index.html`.
 
@@ -389,6 +449,11 @@ landing on the headline facing camera for ~2 s, front half above a person matte 
 
 **Sound:** darksynth pulse, HUD beeps, scan sweeps, an ascending lock-on tone, an alarm on lock.
 
+**References** (more: `refs.py search hud --category motion`):
+- [@dotey](https://x.com/dotey/status/2103964025683927166), 35k views, full prompt with a HUD for the whole film: a seal-stamped volume number top left, vertical dynasty names on the right, a scroll timeline and a year counter along the bottom. Here the HUD is the documentary's structure, not decoration.
+- [@_mexicat](https://x.com/_mexicat/status/2103108369569726802), 1.2M views, 2.5k saves: glowing orange lyrics traced over an oscilloscope grid beside a P(doom) meter. An instrument-panel look carries a music video. No prompt.
+- [@BimbaCrypto](https://x.com/BimbaCrypto/status/2106097890326450525), 608 views, 9:16: a solar-system HUD with tracked panels, orbit and solar-wind readouts and an event log. Most `search hud` hits are game HUDs.
+
 **Source:** mg-styles `prompts/22-hud.md`, `demos/22-hud/js/hud.js`, `post.js`.
 
 ### 80s synthwave / VHS
@@ -414,6 +479,10 @@ landing on the headline facing camera for ~2 s, front half above a person matte 
 - A VHS pass so heavy the title is unreadable.
 
 **Sound:** synthwave: gated-reverb snare, arpeggiated saw bass, lush pads, a big chord and crash on the title slam.
+
+**References** (more: `refs.py search synthwave`):
+- [@goodside](https://x.com/goodside/status/2102884238576296179), 18k views: VHS-timestamped found footage in a low-poly Backrooms, from one prompt (described in the post).
+- [@devswha](https://x.com/devswha/status/2106100273509007802), 1.1k views: a synthwave sun, an aurora and a chrome blob among ten numbered scenes at 120 BPM, from one prompt with no assets. The indexes are thin here; also try `search vhs` and `--tag retro`.
 
 **Source:** mg-styles `prompts/10-synthwave.md`, `demos/10-synthwave/index.html`.
 
@@ -443,6 +512,11 @@ landing on the headline facing camera for ~2 s, front half above a person matte 
 
 **Sound:** an ambient cinematic pad, soft shimmer, very subtle UI ticks.
 
+**References** (more: `refs.py search glass --has-prompt --sort saves`):
+- [@motion_conquest](https://x.com/motion_conquest/status/2103510103622308152), 174k views, 2.1k saves, full prompt: an Apple Liquid Glass UI showreel at 1440×1440, 60 fps, a seamless loop, cut to a named Mixkit track.
+- [@twoclipping](https://x.com/twoclipping/status/2103835273813496100), 132k views, 3.7k saves (2.8 %). The prompt gives a working glass recipe: each glass element clones the scene behind it, three feDisplacementMaps at slightly different scales make chromatic edges, and a rim light finishes it. It also notes that `backdrop-filter: url()` misreads maps in Chromium.
+- [@viktoroddy](https://x.com/viktoroddy/status/2106061619176620344), 11k views: a spec-level prompt for a glass cuboid refracting a huge headline with chromatic dispersion.
+
 **Source:** mg-styles `prompts/12-aurora-glass.md`, `demos/12-aurora-glass/main.js`, `shaders.js`.
 
 ### Liquid
@@ -467,6 +541,10 @@ landing on the headline facing camera for ~2 s, front half above a person matte 
 - Perfectly straight edges anywhere.
 
 **Sound:** bubbly gloops, pour, splash, drip, a deep bass swell under a glossy synth bed.
+
+**References** (more: `refs.py search liquid`):
+- [@ann_nnng](https://x.com/ann_nnng/status/2107095740485144817), 36k views, 530 saves (1.5 %): cocktail-glass liquid in three.js, from a short brief.
+- [@vib3coded](https://x.com/vib3coded/status/2104285370951012504), 628k views: a WebGPU gummy-watermelon slice you pull and cut, built from a long structured prompt. It's interactive, not a film, but a good material reference for thick, glossy, soft bodies. `search jelly` finds more.
 
 **Source:** mg-styles `prompts/07-liquid.md`, `demos/07-liquid/js/scene.js`, `shaders.js`.
 
@@ -498,6 +576,11 @@ landing on the headline facing camera for ~2 s, front half above a person matte 
 
 **Sound:** chiptune (pulse lead, triangle bass, noise drums) plus jump, coin and chest SFX.
 
+**References** (more: `refs.py search --tag pixel-art --has-prompt --sort saves`):
+- [@majidmanzarpour](https://x.com/majidmanzarpour/status/2102476258948927543), 453k views, 2.7k saves. The full prompt is this card written as rules: a 128×96 logical canvas, the largest integer scale, `imageSmoothingEnabled = false`, no assets.
+- [@DotCSV](https://x.com/DotCSV/status/2102737776219168939), 574k views, 3.3k saves: pixel-art neural-network training from a one-line Spanish prompt. The model trained a real MNIST classifier so that the animation would be accurate.
+- [@minosdevs](https://x.com/minosdevs/status/2103112945341251920), 136k views, 1.4k saves: a 6-second rainy Paris pixel loop, pitched as a lofi background. No prompt.
+
 **Source:** mg-styles `prompts/20-pixel.md`, `demos/20-pixel/film.js`.
 
 ### 3D render (Blender route)
@@ -525,6 +608,11 @@ landing on the headline facing camera for ~2 s, front half above a person matte 
 
 **Sound:** ASMR soft thuds, squishes, bubbly pops, an airy cinematic pad; hits frame-synced to impacts.
 
+**References** (more: `refs.py search blender --sort saves`):
+- [@alexalbert__](https://x.com/alexalbert__/status/2102458348511879448), 264k views, 1.6k saves: a Blender claymation from a single prompt in claude.ai. `search claymation` finds more.
+- [@JaydenDavisNC](https://x.com/JaydenDavisNC/status/2107086714820870617), 272k views, 1.4k saves: fuzzy felt critters roll a ball that unspools into a logo. Per the author, the model built the models, rig, animation and music.
+- [@Ayu_AI_0912](https://x.com/Ayu_AI_0912/status/2103737014508216515), 124k views, 976 saves, full prompt (Japanese): CAD drawings first, then a Blender film where ink lines rise into the 3D shrine at high tide.
+
 **Source:** mg-styles `prompts/04-3d-render.md`, `demos/04-3d-render/blender/scene.py`, `index.html`.
 
 ## 7. Checking a film against its card
@@ -551,4 +639,5 @@ For the critic (or yourself before delivery):
 
 - **mg-styles-15** by Vincentwei1021: https://github.com/Vincentwei1021/mg-styles-15 (MIT). Code, prompts and films are MIT; third-party assets (VCSL samples, HDRI, photos, Natural Earth) are CC0 or public domain; glyph outlines are OFL. Each card's prompt and demo path is relative to this repo, e.g. `https://github.com/Vincentwei1021/mg-styles-15/blob/HEAD/prompts/05-cel-boil.md`. The prompts' signature-feature sections are in Chinese; the numbers here are translated and checked against the demo code.
 - **claude-animation-skill** by buildwithhanif: https://github.com/buildwithhanif/claude-animation-skill (MIT). `references/motion.md` (exposure, boil, snap-then-hold), `styles.md` (editorial, brush-watercolour, low-poly, 3D type ring), `traps.md`.
+- **References** come from three public indexes (zhuyansen/jasonzhu.ai, claudevideo.org, Skillry) joined by `scripts/refs.py`. The videos and prompts belong to their authors: link to them, learn from them, and don't redistribute them.
 - `templates/drawn.js` reimplements ideas from both. It doesn't copy the code; it credits them in its header.

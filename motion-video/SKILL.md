@@ -48,13 +48,19 @@ node $S/scripts/render.mjs comp.html --stills 0,1.6,3.3 -o stills/     # look at
 node $S/scripts/render.mjs comp.html --draft -o draft.mp4              # half size, fast — judge the rhythm
 node $S/scripts/render.mjs comp.html -o out.mp4 [--audio mix.wav] [--fps 60] [--ss 2] [--workers 4] [--keep-frames]
 node $S/scripts/render.mjs comp.html -o out.mp4 --range 4.2,6         # re-render one span into kept frames
+node $S/scripts/render.mjs "comp.html?format=portrait&lang=ru" -o ru.mp4  # formats vertical|square|wide|portrait, ?lang= strings
+python3 $S/scripts/refs.py search "line art" --has-prompt --sort saves-per-view  # 2,300+ published Opus videos + prompts
+python3 $S/scripts/refs.py show <id|url>                                         # one reference in full
 uv run --with numpy --with soundfile python $S/scripts/vo.py all s1.wav s2.wav --script script.txt -o vo.wav  # tidy + words/captions/cues.json
 uv run --with numpy --with soundfile python $S/scripts/vo.py check final.mp4 script.txt                      # narration vs the script
 uv run --with librosa python $S/scripts/beats.py track.mp3 [--len 15]  # beats, downbeats, drop, best window
 uv run --with librosa --with pedalboard --with pyloudnorm --with soundfile python $S/scripts/mix.py sound.json --video out.mp4 --mux final.mp4
 bash $S/scripts/qa/sheets.sh out.mp4 [t…]                              # sheet / phone-size / frame 0 / strips
-python3 $S/scripts/qa/check_video.py out.mp4                           # colour tags, flashes, frozen spans, rhythm
-uv run --with librosa --with pyloudnorm --with soundfile --with scipy --with pedalboard python $S/scripts/qa/verify_audio.py sound.json
+python3 $S/scripts/qa/check_video.py out.mp4 [--loop]                  # colour tags, flashes, frozen spans, rhythm, loop seam
+node $S/scripts/qa/probe.mjs comp.html                                 # no render: elements stay in frame, no strobing moves
+uv run --with librosa --with pyloudnorm --with soundfile --with scipy --with pedalboard --with matplotlib python $S/scripts/qa/verify_audio.py sound.json [--png spec.png]
+python3 $S/scripts/find_sound.py sfx whoosh paper                      # Mixkit SFX / music pages; `vcsl glock` for CC0 recordings
+uv run --with numpy --with scipy --with numba --with pedalboard --with soundfile --with pyloudnorm python $S/scripts/music.py lofi --len 15 --drop cue:hero -o bed.wav  # generated bed: an option, judge by ear
 ```
 Needs node, ffmpeg, uv, and Playwright resolvable from the working dir (`npm i -D playwright`, or run from
 a project that has it). System Chrome is used when present.
@@ -83,8 +89,8 @@ alone and in parallel. That's the only hard rule — it's what makes the rendere
 | finding the idea: claim, tension, idea generators, picking, anti-tour tests | `references/concept.md` |
 | ideas that worked, real prompts, what made them land; pulling a reference from the galleries | `references/inspiration.md` |
 | a style per film: cards with signature features, routes, traps (drawn, graphic, editorial, FX, 3D) | `references/styles.md` |
-| moves: timing, springs, camera, transitions/carries, blur, rhythm, gotchas | `references/craft.md` |
-| vertical layout, safe areas, type sizes, formats | `references/layout.md` |
+| moves: timing, springs, camera, beat punches, transitions/carries, blur, seamless loops, gotchas | `references/craft.md` |
+| vertical layout, safe areas, type sizes, formats (incl. 4:5), several languages from one comp | `references/layout.md` |
 | story, hooks, copy, mascots and characters | `references/story.md` |
 | recording a real app or site | `references/capture.md` |
 | music, sound design, the mixer, free/licensed sources | `references/sound.md` |

@@ -1,10 +1,11 @@
 <!doctype html>
 <!-- motion-video · composition template.
      Contract with scripts/render.mjs:
-       window.__meta  = { duration, fps, width, height, blur: [[t0,t1]…], cuts: [t…] }
+       window.__meta  = { duration, fps, width, height, blur: [[t0,t1]…], cuts: [t…], safe, inFrame?, loop? }
        window.__seek(t) paints the frame for time t — a PURE function of t: no timers, no CSS
                         transitions, no Math.random (use rng), no state carried between frames.
        window.__ready   resolves when fonts and images are decoded.
+     Query params: ?format=vertical|portrait|square|wide  ?lang=en|ru|…  (one file for every cut).
      Replace the demo scene (SCENES at the bottom) with yours. Keep the helpers. -->
 <html>
 <head>
@@ -34,15 +35,41 @@
 </div>
 <script>
 /* ============================== format & layout ============================== */
-// Lay out against the format, not fixed pixels: the same timeline renders 9:16, 1:1, 16:9.
-const FORMATS = { vertical: [1080, 1920], square: [1080, 1080], wide: [1920, 1080] };
-const FMT = new URLSearchParams(location.search).get('format') ?? 'vertical';
+// Lay out against the format, not fixed pixels: the same timeline renders 9:16, 4:5, 1:1, 16:9.
+const Q = new URLSearchParams(location.search);
+const FORMATS = { vertical: [1080, 1920], portrait: [1080, 1350], square: [1080, 1080], wide: [1920, 1080] };
+const FMT = Q.get('format') ?? 'vertical';
 const [W, H] = FORMATS[FMT];
 document.documentElement.style.setProperty('--W', W + 'px');
 document.documentElement.style.setProperty('--H', H + 'px');
-// Safe area for text/logos (TikTok + Reels UI): see references/layout.md
-const SAFE = FMT === 'vertical' ? { x0: 65, x1: 940, y0: 270, y1: 1248 } : { x0: W * .06, x1: W * .94, y0: H * .08, y1: H * .86 };
+// Safe area for text/logos — see references/layout.md (vertical: TikTok + Reels UI; portrait: 4:5 feed, 10 % margins).
+const SAFE = { vertical: { x0: 65, x1: 940, y0: 270, y1: 1248 }, portrait: { x0: 108, x1: 972, y0: 135, y1: 1215 } }[FMT]
+  ?? { x0: W * .06, x1: W * .94, y0: H * .08, y1: H * .86 };
 const $ = s => document.querySelector(s);
+
+/* ============================== languages ============================== */
+// One composition, every language: ?lang=ru. Never fork the file per language — each later motion fix would be
+// made twice. WRITE each language (its own word order and length), don't translate literally; line breaks
+// differ, so lines live here per language. Timing per language comes from its own cues/words files (see __ready).
+const LANG = Q.get('lang') ?? 'en';
+document.documentElement.lang = LANG; // hyphenation, quotes, font shaping
+const STRINGS = {
+  en: { hook: [['A real line from'], ['the user’s life', 'accent']], product: 'Product', where: 'where to get it' },
+  ru: { hook: [['Живая фраза'], ['из жизни юзера', 'accent']], product: 'Продукт', where: 'где скачать' },
+};
+/** tr('hook'). A missing string throws: a silent fallback would ship English inside the Russian cut. */
+function tr(key) { const v = STRINGS[LANG]?.[key]; if (v == null) throw new Error(`no string "${key}" for lang "${LANG}"`); return v; }
+/** Call in __ready after layout: logs (render.mjs prints it) every element whose words leave SAFE — run per language/format. */
+function checkSafe(...sels) {
+  for (const sel of sels) {
+    const parts = [...document.querySelectorAll(`${sel} .w`)]; const els = parts.length ? parts : [$(sel)];
+    const r = els.map(e => e.getBoundingClientRect()).filter(r => r.width);
+    if (!r.length) continue;
+    const box = { x0: Math.min(...r.map(b => b.left)), x1: Math.max(...r.map(b => b.right)), y0: Math.min(...r.map(b => b.top)), y1: Math.max(...r.map(b => b.bottom)) };
+    if (box.x0 < SAFE.x0 || box.x1 > SAFE.x1 || box.y0 < SAFE.y0 || box.y1 > SAFE.y1)
+      console.error(`safe area: ${sel} [${LANG}/${FMT}] spans x ${box.x0 | 0}–${box.x1 | 0}, y ${box.y0 | 0}–${box.y1 | 0}; safe x ${SAFE.x0 | 0}–${SAFE.x1 | 0}, y ${SAFE.y0 | 0}–${SAFE.y1 | 0}`);
+  }
+}
 
 /* ============================== math ============================== */
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
@@ -111,6 +138,31 @@ function camera(t, keys) {
 /** Frame-quantised time: a layer that must stay SHARP inside a blur window uses tq instead of t. */
 const quant = (t, fps = 30) => Math.round(t * fps) / fps;
 
+/* Loops (__meta.loop = true): design for t ∈ [0, T). The renderer's last frame is T − 1/fps; "frame T" IS frame 0,
+   so the last frame must be one ordinary step before frame 0 — same position AND velocity, no hold. */
+/** Wrap a time into [0, T) — for a layer on its own offset clock (a delayed copy, a belt of cards). */
+const loopT = (t, T) => ((t % T) + T) % T;
+/** Phase 0…1 of a periodic motion, the period snapped so a WHOLE number of cycles fits T (asks ~period, gets T/n). */
+function cyc(t, period, T = window.__meta.duration) { const n = Math.max(1, Math.round(T / period)); return loopT(t, T / n) * n / T; }
+/** Springs across the seam: the change list repeated one loop earlier, so the last cycle's spring tails are still
+ *  settling at t = 0 exactly as at t = T. Changes must come back to `base`. track(t, base, loopKeys(changes, T), f, z) */
+const loopKeys = (changes, T) => [...changes.map(([t0, to]) => [t0 - T, to]), ...changes];
+
+/** Beat camera punch → a scale multiplier: +amp on each beat, +barAmp on each bar (downbeat; a downbeat gets both),
+ *  sharp attack, exponential decay (`decay` = time constant, s). `from`: bars punch only from here (the drop).
+ *  `quiet`: [[t0, t1]…] — beats inside are dropped (footage holds, UI mid-read). `loop`: T, so a tail crosses the seam.
+ *  Beats from beats.py (window.beats_in_film / downbeats_in_film / drop_in_film) or cues.json, loaded in __ready.
+ *  $('#stage').style.transform = `scale(${punch(t, B.beats, { bars: B.bars, from: B.drop }).toFixed(4)})` */
+function punch(t, beats, { amp = 0.012, barAmp = 0.03, bars = [], from = -Infinity, decay = 0.12, attack = 0.03, quiet = [], loop = 0 } = {}) {
+  const live = b => !quiet.some(([a, z]) => b >= a && b < z);
+  const bump = (list, a) => {
+    let last = null;
+    for (const b of loop ? [...list.map(x => x - loop), ...list] : list) if (b <= t) last = b;
+    return last == null ? 0 : a * E.out3(prog(t, last, attack)) * Math.exp(-(t - last) / decay);
+  };
+  return 1 + bump(beats.filter(live), amp) + bump(bars.filter(b => b >= from && live(b)), barAmp);
+}
+
 /* Real footage (from scripts/capture.mjs takes): pick the frame for take-time ms. */
 function frameAt(take, ms) {
   const fr = take.frames; let lo = 0, hi = fr.length - 1;
@@ -147,22 +199,29 @@ const imagesLoaded = () => Promise.all([...document.images].map(img => new Promi
 //  4.0  end card holds to the last frame        | —               | all    | —             | chime
 const T = { hookOut: 1.4, iris: 1.6, push: 2.3, swap: 3.8, end: 6.0 };
 // With a cue sheet: Object.assign(T, await loadJSON('cues.json')) at the top of __ready, then set window.__meta there
-// (render.mjs reads __meta after __ready) — picture and sound read the same times.
+// (render.mjs reads __meta after __ready) — picture and sound read the same times. Several languages: one cue/words
+// file per voice (`cues.${LANG}.json`, `words.${LANG}.json`), so each cut keys its beats to its own words.
+// Music-driven: const B = await loadJSON('beats.json').then(j => ({ beats: j.window.beats_in_film,
+//   bars: j.window.downbeats_in_film, drop: j.window.drop_in_film }));  → punch(t, B.beats, {bars: B.bars, from: B.drop})
 window.__meta = {
   duration: T.end, fps: 30, width: W, height: H,
   blur: [[T.iris, T.iris + 0.36], [T.swap - 0.2, T.swap + 0.3]], // only fast moves get sub-frame blur
   cuts: [T.swap],                                               // hard swaps: never blend across
+  safe: SAFE,   // read by qa/probe.mjs for safe-area checks — keep it the format's SAFE
+  inFrame: [],  // probe.mjs checks these stay in frame: ['#sel', {sel: '#cta', area: 'safe', from: t0, to: t1}, …]
+  loop: false,  // true = the film repeats: design for t ∈ [0, T), use cyc()/loopKeys(), check with check_video.py --loop
 };
 window.__ready = (async () => {
   $('#bg').style.background = 'radial-gradient(120% 80% at 50% 30%, #2a2348, #15131c 70%)';
-  setWords($('#hook'), [['A real line from'], ['the user’s life', 'accent']]);
-  setWords($('#end'), [['Product', '', 'font-size:140px'], ['where to get it', 'accent', 'font-size:56px;margin-top:24px']]);
+  setWords($('#hook'), tr('hook'));
+  setWords($('#end'), [[tr('product'), '', 'font-size:140px'], [tr('where'), 'accent', 'font-size:56px;margin-top:24px']]);
   Object.assign($('#hook').style, { top: SAFE.y0 + 380 + 'px', fontSize: '92px' });
   Object.assign($('#end').style, { top: SAFE.y0 + 420 + 'px' });
   Object.assign($('#card').style, { left: W / 2 - 330 + 'px', top: H / 2 - 420 + 'px', width: '660px', height: '840px',
     borderRadius: '36px', background: 'linear-gradient(160deg,#4b3f8f,#231d45)', boxShadow: '0 40px 80px -30px #000' });
   await document.fonts.ready;
   await imagesLoaded();
+  checkSafe('#hook', '#end');
 })();
 
 window.__seek = t => {
@@ -174,6 +233,7 @@ window.__seek = t => {
   $('#end').style.display = t >= T.swap ? 'block' : 'none';
   $('#end').style.transform = `translateY(${t >= T.swap ? y : 0}px)`;
   riseWords($('#end'), t, T.swap + 0.15, 0.07, 0.55);
+  // With music: $('#stage').style.transform = `scale(${punch(t, B.beats, { bars: B.bars, from: B.drop }).toFixed(4)})`;
 };
 </script>
 </body>

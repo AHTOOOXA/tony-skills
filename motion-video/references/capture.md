@@ -23,6 +23,11 @@ version somewhere and film it.
   streaming LLM response once and replay it with `stream: {match, lines, gapMs}`.
 - **Drive it like a finger**: `s.tap(locator)` draws a soft touch mark first; poll app state and retry taps
   that land mid-animation; navigate in-app (router links) while recording — a full page load can hang.
+- **Type like a person**: `s.type(locator, text, {cps, seed})`. A constant rate reads as a machine; the
+  rhythm is seeded (same take every time): jittered gaps, longer after a space and after punctuation, a beat
+  before a capital, an occasional hesitation at a word start, scaled so the mean rate is exactly `cps`.
+  Default 12 (a fluent typist); 6–8 for a hero prompt the viewer reads as it lands; 25–40 for a long fill
+  nobody reads (or keep it human and speed-ramp the span in the composition).
 - **Smooth scroll**: native smooth scrolling ignores the slowed clock; `s.glideTo(locator, 0.4, 1200)` glides the
   right scroll container so the element sits at 40 % of the viewport.
 - **Privacy**: `hide: [selectors]` for real avatars, names, dev banners, debug gears (eruda); curate history
@@ -32,7 +37,16 @@ version somewhere and film it.
 
 ## Using takes in the composition
 
-`take.json` = `{frames: [{file, t(ms)}], marks: [{label, t}]}`. In `__seek`, pick the frame for take-time with
+`take.json` = `{frames: [{file, t(ms)}], marks: [{label, t}], keys: [{t, key}]}` (all t in ms of app time). In `__seek`, pick the frame for take-time with
 `frameAt(take, ms)` (template) and show it full-bleed (no device frames unless the brief asks — a phone mockup
 reads as an ad template). Overlays (labels, clock, stickers) need a placement pass per screen.
 A dead-still hold on the last footage frame (+0.8 s) gives a payoff label time to be read.
+
+**Typing on screen.**
+- Never let the camera chase a wrapping text cursor: when the line wraps, the caret jumps back left and the
+  camera whips with it. Frame the field once (zoom so the whole line or block fits) and hold; make the field
+  wide enough that the typed text is one fixed line, or let it grow downward inside a still frame.
+- Key clicks come from `keys`, mapped through the same take-time → video-time ramp as the frames. Accent,
+  don't click every key — fewer sounds than events (`sound.md`): the first key, a few word starts, the last
+  key, and a firmer Enter; a dense click per letter turns into a rattle under music. In a sped-up span, drop
+  clicks rather than squeezing them.

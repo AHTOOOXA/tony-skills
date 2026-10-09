@@ -11,6 +11,8 @@ HyperFrames (HF), ClaudeAnimationBase (CAB), our own renders (`tools.md`).
 4. Carries instead of cuts
 5. Motion blur
 6. The slop list (what makes it look AI-made)
+7. Gotchas that cost a render
+8. Seamless loops
 
 ## 1. Reads and rhythm
 
@@ -80,6 +82,19 @@ Easings must return exactly 0 and 1 at the ends (a 1e-9 residue made an element 
 - Rests: product footage dead still; a stage (sky, props, mascot) may breathe.
 - No shake in UI films (at 30 fps with a 180° shutter it doubles every letter).
 
+**Beat punches** (CMD): a tiny scale kick on the beat makes a music-led film feel cut *to* the track, even
+in shots where nothing else lands on the beat. `punch(t, beats, {bars, from})` in the template returns a
+scale multiplier: +1.2 % per beat, +3 % per bar (downbeat), ~30 ms attack, exponential decay with a
+~0.12 s time constant (gone well before the next beat at 120 BPM). Beat times come from `beats.py`
+(`window.beats_in_film`, `downbeats_in_film`, `drop_in_film`) or `cues.json`, loaded in `__ready`.
+- Build it up: beats only before the drop, bars join from the drop (`from: drop`) — the punch becomes the
+  energy curve. A quiet intro or a breakdown gets none.
+- Put it on the stage, titles, graphic layers — multiply it into the camera's scale, don't fight it.
+- Not on footage holds or UI the viewer is reading (a pulsing sentence is harder to read and the rest stops
+  being a rest): pass those spans as `quiet`, or keep that layer outside the punched container.
+- Not with a voice-driven film unless the music is up front; not on a calm/luxe film; one punch system per
+  film — punching the camera AND every title doubles it. Over ~5 % reads as a glitch, not a beat.
+
 ## 4. Carries (and when to cut)
 
 A film reads as slides when beats *replace* each other with nothing surviving. At every boundary something must survive and move
@@ -104,7 +119,12 @@ footage scrolls under fixed overlays.
 
 `render.mjs` does it from `__meta.blur` windows: SUB sub-frames (10) spread over a 180° shutter, averaged in
 **linear light**, never across `__meta.cuts`.
-- Only where something moves > ~20 px/frame; unblurred motion > ~80 px/frame strobes.
+- Only where something moves > ~20 px/frame; unblurred motion > ~80 px/frame strobes (the eye sees
+  separate copies, not a move). Any move faster than that outside a blur window is a bug: wrap it in a window,
+  or slow it. `qa/check_video.py --blur a-b,…` flags whole-frame/band moves over 80 px/frame (on a 1080 canvas)
+  outside the windows you pass; a small element flying alone isn't caught — look at those frames yourself.
+  A cut-the-curve exit (in4, 230 px in 0.2 s) peaks near 150 px/frame instantaneously and steps 65–75 px
+  between sampled frames at 30 fps — borderline, which is why the template blurs it. Longer or faster: always.
 - 4 sub-frames leave ghost copies; 8–10 is enough.
 - A layer that must stay sharp inside a blur window (text in flight) uses frame-quantised time `quant(t)`.
 - Never average across a hard swap: two layouts dissolve into mud. List the swap in `cuts`.
@@ -133,3 +153,29 @@ Each of these shipped a broken frame for someone (twoclipping, CMD, onetake, our
 - **CSS animations are fine, transitions are not:** `render.mjs` seeks every CSS/Web Animation to t, but a
   transition depends on a state change, so it is disabled.
 
+
+## 8. Seamless loops
+
+A loop (a LinkedIn/X autoplay, a UI-morph reel, a background) is judged at the seam: viewers see it
+three or four times, and the one hitch is what they notice. Set `__meta.loop = true` as a note to yourself
+and to the checker; the renderer doesn't change.
+- **Design for t ∈ [0, T).** The encoder's last frame is T − 1/fps, and "frame T" *is* frame 0. Draw the
+  state at T equal to the state at 0, and the last frame is then one ordinary step before it. Drawing the
+  end state on the last frame instead gives a duplicated frame — a hold that reads as a stutter.
+- **Position AND velocity.** Matching where things are isn't enough: a spring that is still settling
+  at T and starts from rest at 0 is a speed break. Repeat the cycle's changes one loop earlier
+  (`track(t, base, loopKeys(changes, T))`) so the tails at 0 are the tails at T; easings ending at
+  zero speed are fine on both sides of the seam.
+- **Whole cycles.** Every periodic motion (a spin, a bob, a belt, a pulse, a gradient drift) runs a whole
+  number of cycles over T: `cyc(t, period)` snaps the period to T/n. A 2.3 s bob in a 6 s loop jumps.
+  Seeded noise loops if it is sampled on a circle (`sin/cos(2π t/T)` as its coordinates), not along t.
+- **Music bars divide the loop.** T = whole bars (at 120 BPM a bar is 2 s: 4, 6, 8 s loops); the audio cut
+  sits on a downbeat and its tail is mixed into its head (or the track is itself a loop), so sound has no
+  seam either. Beat punches get `loop: T` so a tail crosses the seam.
+- **No hold or fade at the seam.** A fade to black and back is the slideshow ending, not a loop; an end
+  card held for 2 s kills the "is it over?" moment. The last beat sets up the first (CMD: "back to state 0").
+- **One thing transforms** (A becomes B becomes … becomes A) works better than a sequence of scenes:
+  5–9 s, one moving subject, the cut is invisible because nothing cuts.
+- **Check:** `qa/check_video.py out.mp4 --loop` compares the seam step (last → frame 0) with its neighbours
+  and the median step and names a JUMP, a HOLD or a SPEED BREAK. Then watch it twice in a row:
+  `ffmpeg -stream_loop 2 -i out.mp4 -c copy loop3.mp4`.

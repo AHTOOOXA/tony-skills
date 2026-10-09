@@ -8,10 +8,17 @@ sound.json (see templates/sound.json):
   master   {lufs:-14, tp:-1.5}
   room     {size:.3, damping:.55, level:.22}         one shared room for every SFX
   assets   {name: {src, license, trim?, hp?, lp?, gain?, start?}}
-            src: "kenney:<pack>/<file.ogg>" · "mixkit-sfx:<id>" · "mixkit-music:<id>" · https URL · local path
-  events   [{sound | layers:[{sound, gain, offset}], t, align:"peak"|"onset", lift? | gain?, pan, send, pitch?, duck?}]
+            src: "kenney:<pack>/<file.ogg>" · "mixkit-sfx:<id>" · "mixkit-music:<id>" · https URL · local path ·
+                 "vcsl:<alias>[/<words>][@n]" (CC0 recorded instruments: "vcsl:woodblock", "vcsl:glock/loud C6",
+                 "vcsl:piano/C4 v2", "vcsl:shaker/Down@2"; list with find_sound.py vcsl [alias])
+  events   [{sound | layers:[{sound, gain, offset}], t, align:"peak"|"onset", lift? | gain?, pan, send, pitch?, duck?,
+             speed?, speed_exp?, loop?, dur?}]
             align "peak": the loudest sample lands on t (hits); "onset": the first attack lands on t (swells, strokes)
             lift: dB the sound's core sits above the bed right there (needs a bed); gain: fixed dB peak (no bed)
+            speed: the on-screen speed of what makes the sound ([[t, v], …] in film time, t may be "cue:…", or a JSON
+            file — see speed_curve) → its loudness follows (v / v_max) ** speed_exp (0.6), smoothed at 30 Hz: a pen
+            scratch that slows into a corner gets quieter there. loop: true repeats a short texture to the curve's
+            end (or to `dur` s); dur alone trims the sound to that length. Lift is measured after the shaping.
   bed      {asset, kind:"ambience"|"music", lufs (absolute, after the master), offset?, lp?, hp?, fade_in?, fade_out?,
             lift_at?, key_times?}   music: picks the offset where the track lifts at lift_at and key_times hit beats
   silences [[t0, t1], …]   the bed drops out here (score the silence: before the hero hit, at a held breath)
@@ -34,16 +41,20 @@ import re
 import subprocess
 import unicodedata
 import sys
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
 
 import librosa
 import numpy as np
-import pyloudnorm as pyln
 import soundfile as sf
-from pedalboard import Compressor, HighpassFilter, LowpassFilter, Pedalboard, PitchShift, Reverb
 from scipy.signal import resample_poly
+try:
+    import pyloudnorm as pyln
+    from pedalboard import Compressor, HighpassFilter, LowpassFilter, Pedalboard, PitchShift, Reverb
+except ImportError:  # beats.py / find_sound.py import resolve() only: `uv run --with librosa` is enough for them
+    pyln = None
 
 SR = 48000
 CACHE = Path.home() / ".cache/motion-video/sound"
@@ -53,7 +64,31 @@ KENNEY = {  # CC0 packs (kenney.nl) — the zip URL changes rarely; the page lin
     "interface": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
     "impact": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
 }
-meter = pyln.Meter(SR)
+VCSL = "https://raw.githubusercontent.com/sgossner/VCSL/master/"  # Versilian Community Sample Library, CC0
+VCSL_ALIAS = {  # "vcsl:<alias>[/<words>][@n]" → a folder of github.com/sgossner/VCSL (real recorded instruments)
+    "piano": "Grand Piano, Kawai/Sustains/", "piano-steinway": "Grand Piano, Steinway B/Sus/",
+    "upright": "Upright Piano, Yamaha/Sustains/", "harpsichord": "Harpsichord, French/Sustains/",
+    "harp": "Concert Harp/", "folkharp": "Folk Harp/", "kalimba": "Kalimba, Tanzania/", "mbira": "Mbira dzaVadzimu",
+    "glock": "Struck Idiophones/Glockenspiel/", "marimba": "Struck Idiophones/Marimba/",
+    "vibraphone": "Vibraphone/Soft Mallets/", "vibraphone-hard": "Vibraphone/Hard Mallets/",
+    "xylophone": "Xylophone/Medium Mallets/", "balafon": "Balafon/Soft Mallet/", "chimes": "Hand Chimes/",
+    "tubularbells": "Tubular Bells 1/", "wineglass": "Wine Glasses/Sustains/",
+    "woodblock": "Struck Idiophones/Woodblock/", "slapstick": "Struck Idiophones/Slapstick/",
+    "claves": "Struck Idiophones/Claves/", "triangle": "Struck Idiophones/Triangles/",
+    "shaker": "Shaker, Small/", "shaker-large": "Shaker, Large/", "cabasa": "Struck Idiophones/Cabasa/",
+    "guiro": "Struck Idiophones/Guiro/", "ratchet": "Struck Idiophones/Ratchet/", "tambourine": "Tambourine 1/",
+    "claps": "Struck Idiophones/Claps/", "cowbell": "Struck Idiophones/Cowbells/", "agogo": "Agogo Bells/",
+    "sleighbells": "Sleigh Bells/", "belltree": "Bell Tree/Stroke/", "marktree": "Mark Trees/",
+    "fingercym": "Finger Cymbals/", "anvil": "Struck Idiophones/Anvil/", "brakedrum": "Brake Drum/",
+    "vibraslap": "Vibraslap/", "flexatone": "Flexatone/", "gong": "Struck Idiophones/Gong 1/",
+    "crash": "Clash Cymbals 1/", "suscymbal": "Suspended Cymbal 1/", "hihat": "Hi-Hat Cymbal/",
+    "slitdrum": "Slit Drum/", "cajon": "Struck Idiophones/Cajon/", "bongo": "Bongos/", "conga": "Struck Membranophones/Conga/",
+    "darbuka": "Darbuka/", "framedrum": "Frame Drum/", "timpani": "Timpani 1/Hit/", "bassdrum": "Bass Drum 1/",
+    "snare": "Snare Drum, Modern 1/", "tom": "Struck Membranophones/Tom 1/", "oceandrum": "Ocean Drum/",
+    "whistle": "Ball Whistle/", "trainwhistle": "Train Whistle, Toy/", "ocarina": "Ocarina, Typical/Sustains/Sus/",
+    "recorder": "Baroque Alto Recorder/Sustain/", "organ": "Pipe Organ/Quiet/", "harmonica": "Super64/Sustains/Normal/",
+}
+meter = pyln.Meter(SR) if pyln else None
 db = lambda x: 10 ** (x / 20)
 rms = lambda x: float(np.sqrt(np.mean(np.square(x))) + 1e-12)
 
@@ -71,8 +106,50 @@ def fetch(url: str) -> bytes:
         return r.read()
 
 
+def vcsl_files() -> list:
+    """Every audio file in the VCSL repo (one GitHub API call, cached)."""
+    p = CACHE / "vcsl-tree.json"
+    if not p.exists():
+        CACHE.mkdir(parents=True, exist_ok=True)
+        tree = json.loads(fetch("https://api.github.com/repos/sgossner/VCSL/git/trees/master?recursive=1"))["tree"]
+        p.write_text(json.dumps(sorted(x["path"] for x in tree if x["type"] == "blob"
+                                       and x["path"].lower().endswith((".wav", ".flac", ".ogg", ".mp3")))))
+    return json.loads(p.read_text())
+
+
+def vcsl_find(ref: str) -> list:
+    """"woodblock" · "glock/loud C6" · "piano/C4 v3" · a repo path or part of one → matching repo paths (sorted).
+    Words must all appear in the file name as whole tokens (case-insensitive; "C4" doesn't match "C#4")."""
+    files = vcsl_files()
+    if ref in files:
+        return [ref]
+    alias, _, words = ref.partition("/")
+    if alias.lower() in VCSL_ALIAS:
+        sel = [f for f in files if VCSL_ALIAS[alias.lower()] in f]
+    else:
+        sel, words = [f for f in files if ref.lower() in f.lower()], ""
+    for w in words.lower().split():
+        rx = re.compile(r"(?<![a-z0-9#])" + re.escape(w) + r"(?![a-z0-9#])")
+        sel = [f for f in sel if rx.search(f.rsplit("/", 1)[-1].lower())]
+    return sorted(sel, key=lambda f: ("legacy" in f.lower(), f))  # current recordings before "Legacy" folders
+
+
 def resolve(src: str, base: Path) -> Path:
     CACHE.mkdir(parents=True, exist_ok=True)
+    if src.startswith("vcsl:"):
+        ref, nth = (src[5:].rsplit("@", 1)[0], int(src.rsplit("@", 1)[1])) if re.search(r"@\d+$", src) else (src[5:], 1)
+        hits = vcsl_find(ref)
+        if len(hits) < nth:
+            sys.exit(f"mix: {src} — {len(hits)} VCSL file(s) match; list them: find_sound.py vcsl {ref.split('/')[0]}")
+        path = hits[nth - 1]
+        p = CACHE / ("vcsl-" + path.replace("/", "__"))
+        if not p.exists():
+            p.write_bytes(fetch(VCSL + urllib.parse.quote(path)))
+            p.with_name(p.name + ".json").write_text(json.dumps(
+                {"src": src, "url": VCSL + urllib.parse.quote(path), "license": "CC0-1.0",
+                 "credit": "Versilian Community Sample Library (github.com/sgossner/VCSL)"}, indent=1))
+        print(f"  {src} → {path} (CC0, VCSL)")
+        return p
     if src.startswith("kenney:"):
         pack, member = src[7:].split("/", 1)
         p = CACHE / f"kenney-{pack}-{Path(member).name}"
@@ -138,6 +215,41 @@ def music_offset(y: np.ndarray, dur: float, lift_at: float, key_times: list) -> 
         if lift + 1.2 * on_beat > score:
             best, score = off, lift + 1.2 * on_beat
     return best
+
+
+def speed_curve(sp, base: Path) -> tuple:
+    """An on-screen speed curve → (times, values). Inline [[t, v], …] (t may be "cue:…"), or a JSON file with
+    [[t, v], …] | {"t": [...], "v": [...]} | {"fps": 60, "speed": [...], "t0": 0} (one value per frame)."""
+    if isinstance(sp, str):
+        sp = json.loads((base / sp).read_text())
+    if isinstance(sp, dict) and "t" in sp:
+        t, v = sp["t"], sp["v"]
+    elif isinstance(sp, dict):
+        v = sp.get("speed", sp.get("v"))
+        t = [sp.get("t0", 0) + i / sp["fps"] for i in range(len(v))]
+    else:
+        t, v = [p[0] for p in sp], [p[1] for p in sp]
+    t, v = np.asarray(t, float), np.abs(np.asarray(v, float))
+    o = np.argsort(t)
+    return t[o], v[o]
+
+
+def loop_to(y: np.ndarray, n: int, k: int = 0) -> np.ndarray:
+    """Repeat a texture (pen scratch, rustle) to n samples with 50 ms crossfades; 30 ms fade at the end. Only the
+    sounding part repeats: from k (the anchor) to where it falls 40 dB under its loudest 20 ms (no silent gaps)."""
+    h = int(0.02 * SR)
+    e = np.array([rms(y[i:i + h]) for i in range(0, max(1, len(y) - h), h)])
+    last = min(len(y), (int(np.nonzero(e > e.max() * db(-40))[0][-1]) + 1) * h)
+    y, body = y[:last], y[k:last]
+    xf = min(int(0.05 * SR), len(body) // 3)
+    out = y.copy()
+    while len(out) < n:
+        mid = out[-xf:] * np.linspace(1, 0, xf) + body[:xf] * np.linspace(0, 1, xf)
+        out = np.concatenate([out[:-xf], mid, body[xf:]])
+    out = out[:n].copy()
+    f = min(int(0.03 * SR), n)
+    out[-f:] *= np.linspace(1, 0, f)
+    return out.astype(np.float32)
 
 
 def true_peak_limit(x: np.ndarray, ceiling_db: float) -> np.ndarray:
@@ -322,6 +434,19 @@ def main():
         y /= np.abs(y).max() + 1e-9
         k = anchor(y if len(layers) > 1 else main, e.get("align", "peak"))
         c = int(e["t"] * SR)
+        if e.get("speed") is not None or e.get("dur"):  # velocity-driven foley: loudness follows on-screen speed
+            st, sv = speed_curve(e["speed"], base) if e.get("speed") is not None else (None, None)
+            end = e.get("dur", 0) + e["t"] if e.get("dur") else st[-1]
+            need = max(int((end - e["t"]) * SR), int(0.05 * SR)) + k
+            y = loop_to(y, need, k) if e.get("loop") and len(y) < need else y[:need] if e.get("dur") else y
+            if st is not None:
+                from scipy.signal import butter, sosfiltfilt
+                v = np.interp((c - k + np.arange(len(y))) / SR, st, sv)
+                env = np.clip(v / (sv.max() + 1e-9), 0, 1) ** e.get("speed_exp", 0.6)
+                if len(env) > 30:
+                    env = np.clip(sosfiltfilt(butter(2, 30, fs=SR, output="sos"), env), 0, None)  # no zipper
+                y = (y * env).astype(np.float32)
+            y /= np.abs(y).max() + 1e-9
         hit = e.get("align", "peak") == "peak"
         # The part we level = how loud the sound IS: its loudest 400 ms (momentary loudness), unless it's a
         # click/hit whose energy is a spike (peak > loudest-400 ms + 12 dB) — then 50 ms around the peak.

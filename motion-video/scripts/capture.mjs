@@ -12,6 +12,7 @@
 //   s.mark('home');                       // marks = named moments, in app time → drive your timeline
 //   await s.glideTo('text=Pricing', 0.4, 1200);  // smooth scroll so the element sits at 40% of the viewport
 //   await s.tap(s.page.getByText('Start'));      // finger: a soft touch mark, then a click
+//   await s.type('#prompt', 'a cat in a hat', { cps: 12, seed: 7 });  // human rhythm; keystrokes → take.json keys
 //   await s.wait(800);                    // wait in APP time
 //   await s.stop();                       // writes takes/main/take.json { frames:[{file,t}], marks:[{label,t}] }
 //   await s.close();
@@ -20,6 +21,9 @@
 // stream {match, lines, gapMs} (replay a recorded streaming response line by line),
 // init (a function run in the page before app code: log in, set localStorage, hide debug UI),
 // hide (CSS selectors to hide: dev banners, debug gears, real avatars — keep private data out).
+//
+// take.json = { frames: [{file, t}], marks: [{label, t}], keys: [{t, key}] } — t in ms of APP time.
+// `keys` holds every typed keystroke, so the sound pass can put clicks on the ones it chooses to accent.
 import { mkdirSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -35,6 +39,39 @@ async function loadPlaywright() {
     if (pkg) return import(pathToFileURL(path.join(store, pkg, 'node_modules/playwright-core/index.mjs')).href);
   }
   throw new Error('Playwright not found: npm i -D playwright && npx playwright install chromium');
+}
+
+/** Seeded RNG (mulberry32): the same seed gives the same rhythm on every take. */
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let r = Math.imul(seed ^ seed >>> 15, 1 | seed); r = r + Math.imul(r ^ r >>> 7, 61 | r) ^ r; return ((r ^ r >>> 14) >>> 0) / 4294967296; }; }
+
+/**
+ * A human typing rhythm: the delay (ms, app time) before each character of `text`.
+ * A constant rate reads as a machine. People type in bursts: a jittered gap per key (log-normal), a longer
+ * gap after a space (the next word), longer after punctuation and a line break, a beat before a capital
+ * (shift), and now and then a hesitation at a word start. The whole schedule is then scaled so the mean
+ * rate is exactly `cps` — pauses redistribute time, they don't change how long the line takes.
+ *   cps:   6–8 deliberate (a hero prompt the viewer must read as it appears), 10–14 a fluent typist,
+ *          25–40 a long fill nobody needs to read (UI demos; or ramp it in the composition instead).
+ *   jitter: spread of the per-key gap (log-normal sigma); hesitate: chance of a pause at a word start.
+ */
+export function typingPlan(text, { cps = 12, seed = 1, jitter = 0.35, hesitate = 0.08 } = {}) {
+  const r = rng(seed), chars = [...text];
+  const gauss = () => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+  const raw = chars.map((ch, i) => {
+    const prev = chars[i - 1] ?? '';
+    let w = Math.exp(jitter * gauss() - jitter * jitter / 2);           // mean 1
+    if (i === 0) w *= 1.4;                                              // settle on the field
+    else if (prev === '\n') w *= 4;
+    else if (/[.!?…]/.test(prev)) w *= 3.2;
+    else if (/[,;:—–)]/.test(prev)) w *= 2.2;
+    else if (/\s/.test(prev)) w *= 1.6;
+    if (/\p{Lu}/u.test(ch) && !/\p{Lu}/u.test(prev)) w *= 1.35;           // reaching for shift
+    if (i > 0 && /\s/.test(prev) && !/\s/.test(ch) && r() < hesitate) w += 2.5 + 3 * r(); // a micro-hesitation
+    if (/\s/.test(ch) && i > 0 && !/\s/.test(prev)) w *= 0.85;            // the space bar comes quick
+    return w;
+  });
+  const k = chars.length / cps * 1000 / (raw.reduce((a, b) => a + b, 0) || 1);
+  return raw.map(w => w * k);
 }
 
 /** Runs in the page before any app code. */
@@ -167,7 +204,7 @@ export async function openStage({ base, viewport = [432, 768], scale = 2.5, slow
       dir = path.join(path.resolve(out), name);
       rmSync(dir, { recursive: true, force: true });
       mkdirSync(dir, { recursive: true });
-      frames = []; idx = 0; rec = { name, marks: [], t0: Date.now() / 1000 };
+      frames = []; idx = 0; rec = { name, marks: [], keys: [], t0: Date.now() / 1000 };
       await cdp.send('Animation.setPlaybackRate', { playbackRate: 1 / slow });
       loop = shootLoop();
     },
@@ -185,19 +222,41 @@ export async function openStage({ base, viewport = [432, 768], scale = 2.5, slow
     glideTo: (selectorOrLocator, frac = 0.4, ms = 1200) =>
       (typeof selectorOrLocator === 'string' ? page.locator(selectorOrLocator).first() : selectorOrLocator)
         .evaluate((el, [f, m]) => window.__glideTo(el, f, m), [frac, ms]),
-    /** Type like a person: per-character delays on the slowed clock. */
-    async type(locator, text, cps = 14) { await locator.click(); for (const ch of text) { await page.keyboard.type(ch); await s.wait(1000 / cps); } },
+    /**
+     * Type like a person (see typingPlan): a seeded human rhythm on the slowed clock, each keystroke stamped
+     * into take.json `keys` [{t, key}]. `opts` = cps number (old signature) or {cps, seed, jitter, hesitate,
+     * click}. locator: a Playwright locator, a CSS selector, or null to type into whatever has focus.
+     * Keys are scheduled against one start time, so slow keypress round-trips don't stretch the line.
+     */
+    async type(locator, text, opts = {}) {
+      const o = typeof opts === 'number' ? { cps: opts } : opts;
+      const loc = typeof locator === 'string' ? page.locator(locator).first() : locator;
+      if (loc && o.click !== false) await loc.click();
+      const plan = typingPlan(text, o), chars = [...text];
+      const start = Date.now();
+      let due = 0;
+      for (let i = 0; i < chars.length; i++) {
+        due += plan[i] * slow;                                             // app ms → wall ms
+        const left = start + due - Date.now();
+        if (left > 0) await page.waitForTimeout(left);
+        const a = Date.now();
+        await page.keyboard.type(chars[i]);
+        if (rec) rec.keys.push({ key: chars[i], wall: (a + Date.now()) / 2000 });
+      }
+      return plan;
+    },
     async stop() {
       await page.waitForTimeout(300);
-      const { t0, marks, name } = rec;
+      const { t0, marks, keys, name } = rec;
       rec = null;
       await loop;
       const toApp = w => ((w - t0) * 1000) / slow;
       const meta = { name, slow, scale, viewport, frames: frames.map(f => ({ file: f.file, t: Math.max(0, toApp(f.wall)) })),
-        marks: marks.map(m => ({ label: m.label, t: toApp(m.wall) })) };
+        marks: marks.map(m => ({ label: m.label, t: toApp(m.wall) })),
+        keys: keys.map(k => ({ t: +toApp(k.wall).toFixed(1), key: k.key })) };
       writeFileSync(path.join(dir, 'take.json'), JSON.stringify(meta, null, 1));
       const dur = meta.frames.at(-1)?.t ?? 0;
-      console.log(`take ${name}: ${frames.length} frames over ${(dur / 1000).toFixed(2)} s app time → ${(frames.length / (dur / 1000)).toFixed(0)} fps`);
+      console.log(`take ${name}: ${frames.length} frames over ${(dur / 1000).toFixed(2)} s app time → ${(frames.length / (dur / 1000)).toFixed(0)} fps${keys.length ? `, ${keys.length} keystrokes` : ''}`);
       return meta;
     },
     close: () => browser.close(),
